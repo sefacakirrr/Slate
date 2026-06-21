@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+@custom-variant light (&:where(.light, .light *));
+
+/* Brand accent — derived from the app icon (vivid purple-magenta). Exposed as a
+   Tailwind color scale so components use `bg-accent-500`, `text-accent-400`,
+   `border-accent-500`, `bg-accent-500/10`, etc. Reserved for interactive,
+   active, and brand moments — not large fills — so it stays a signal, not noise. */
+@theme {
+  --color-accent-300: #d9a8ff;
+  --color-accent-400: #c47dff;
+  --color-accent-500: #b14bf0;
+  --color-accent-600: #9a30dd;
+  --color-accent-700: #7e22ce;
+}
+
+/* Components that size via height:100% (e.g. react-resizable-panels' PanelGroup,
+   which sets an inline height:100% that overrides h-screen) need a real height
+   chain up to the viewport. Without this the panel layout collapses to content
+   height and the rest of the window renders blank. */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: #020617; /* slate-950 — covers any area a panel doesn't paint */
+  color: #cbd5e1;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.light body,
+.light {
+  background-color: #ffffff;
+  color: #1e293b;
+}
+
+/* Brand-tinted text selection across the app. */
+::selection {
+  background-color: rgb(177 75 240 / 0.32);
+}
+
+/* Spinner animation for file widget loading state. */
+@keyframes cm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Slim, unobtrusive dark scrollbars (sidebar tree, tab overflow, editor). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2c3a transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: #2a2c3a;
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #3b3d4f;
+}

@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+release/
+
+# TypeScript build info (generated, not source)
+*.tsbuildinfo
+
+# Environment / secrets
+.env
+.env.*
+
+# Editor / IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Claude Code local settings (personal permissions, session data)
+.claude/settings.local.json
+.claude/sessions/
