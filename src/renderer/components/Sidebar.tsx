@@ -674,7 +674,7 @@ export function Sidebar() {
           </button>
           <div className="text-right">
             <p className="text-[11px] font-semibold text-slate-300 light:text-slate-600">
-              Slate <span className="font-normal text-slate-400 light:text-slate-500">v0.1.0</span>
+              Slate <span className="font-normal text-slate-400 light:text-slate-500">v{__APP_VERSION__}</span>
             </p>
             <p className="text-[10px] text-slate-400 light:text-slate-500">Created by Sefa Çakır</p>
           </div>
