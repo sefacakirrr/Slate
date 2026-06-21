@@ -1,6 +1,6 @@
 {
   "name": "slate",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Personal local-first notes app for code and life.",
   "main": "./out/main/index.js",
   "author": {
