@@ -15,7 +15,7 @@ export function ContentPane() {
 
   if (activeTabPath === null) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 bg-slate-950 text-slate-600">
+      <div className="flex h-full flex-col items-center justify-center gap-2 bg-slate-950 text-slate-600 light:bg-white light:text-slate-400">
         <FileText className="size-8" aria-hidden="true" />
         <p className="text-sm">Select a note to view it.</p>
       </div>
@@ -28,9 +28,9 @@ export function ContentPane() {
     vaultPath !== null ? `${vaultPath}${sep}${activeTabPath.split('/').join(sep)}` : activeTabPath
 
   return (
-    <div className="flex h-full flex-col bg-slate-950">
+    <div className="flex h-full flex-col bg-slate-950 light:bg-white">
       <TabBar />
-      <div className="border-b border-slate-800 px-4 py-1.5 font-mono text-xs text-slate-500">
+      <div className="border-b border-slate-800 px-4 py-1.5 font-mono text-xs text-slate-500 light:border-slate-200 light:text-slate-400">
         <span className="block truncate" title={fullPath}>
           {fullPath}
         </span>

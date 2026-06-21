@@ -1,6 +1,7 @@
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, ipcMain, net, protocol } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { registerIpcHandlers } from './ipc/handlers'
 import { AttachmentService } from './services/AttachmentService'
 import { IndexService } from './services/IndexService'
@@ -63,6 +64,14 @@ app.whenReady().then(async () => {
   })
 
   windowManager.createMainWindow()
+
+  // Check for updates silently; user gets a native notification when one is
+  // ready and the new version installs on the next app restart.
+  if (app.isPackaged) {
+    autoUpdater.checkForUpdatesAndNotify().catch((err) =>
+      console.error('auto-update check failed:', err),
+    )
+  }
 
   shortcutManager.register('quick-capture', 'CmdOrCtrl+Shift+N', () => {
     windowManager.openQuickCapture()

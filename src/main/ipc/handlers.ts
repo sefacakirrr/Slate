@@ -83,6 +83,7 @@ function buildHandlers(deps: Deps): HandlerMap {
       return result.filePaths[0]
     },
     'vault:listNotes': async () => (await vault()).listNotes(),
+    'vault:listDirs': async () => (await vault()).listDirs(),
     'vault:listDetailed': async () => (await vault()).listNotesDetailed(),
     'vault:readNote': async (path) => (await vault()).readNote(path),
     'vault:writeNote': async (req) => {
@@ -110,6 +111,17 @@ function buildHandlers(deps: Deps): HandlerMap {
       tryIndex('deleteNote', () => deps.index.removeNote(path))
       return undefined
     },
+    'vault:deleteFolder': async (path) => {
+      const v = await vault()
+      const allNotes = await v.listNotes()
+      const prefix = path + '/'
+      const toRemove = allNotes.filter((p) => p === path || p.startsWith(prefix))
+      await v.deleteFolder(path)
+      for (const p of toRemove) {
+        tryIndex('deleteFolder/removeNote', () => deps.index.removeNote(p))
+      }
+      return undefined
+    },
     'vault:createFolder': async (path) => {
       await (await vault()).createFolder(path)
       return undefined
@@ -117,6 +129,19 @@ function buildHandlers(deps: Deps): HandlerMap {
     'vault:renameNote': async (req) => {
       await (await vault()).renameNote(req.from, req.to)
       tryIndex('renameNote', () => deps.index.renameNote(req.from, req.to))
+      return undefined
+    },
+    'vault:renameFolder': async (req) => {
+      const v = await vault()
+      const allNotes = await v.listNotes()
+      const fromPrefix = req.from + '/'
+      const movedNotes = allNotes.filter((p) => p.startsWith(fromPrefix))
+      await v.renameFolder(req.from, req.to)
+      const toPrefix = req.to + '/'
+      for (const p of movedNotes) {
+        const newPath = toPrefix + p.slice(fromPrefix.length)
+        tryIndex('renameFolder/renameNote', () => deps.index.renameNote(p, newPath))
+      }
       return undefined
     },
     'search:query': (query) => deps.search.search(query),
@@ -229,13 +254,16 @@ export function registerIpcHandlers(ipc: IpcMain, deps: Deps): void {
   register(ipc, 'settings:setTheme', handlers['settings:setTheme'])
   register(ipc, 'dialog:pickFolder', handlers['dialog:pickFolder'])
   register(ipc, 'vault:listNotes', handlers['vault:listNotes'])
+  register(ipc, 'vault:listDirs', handlers['vault:listDirs'])
   register(ipc, 'vault:listDetailed', handlers['vault:listDetailed'])
   register(ipc, 'vault:readNote', handlers['vault:readNote'])
   register(ipc, 'vault:writeNote', handlers['vault:writeNote'])
   register(ipc, 'vault:createNote', handlers['vault:createNote'])
   register(ipc, 'vault:deleteNote', handlers['vault:deleteNote'])
+  register(ipc, 'vault:deleteFolder', handlers['vault:deleteFolder'])
   register(ipc, 'vault:createFolder', handlers['vault:createFolder'])
   register(ipc, 'vault:renameNote', handlers['vault:renameNote'])
+  register(ipc, 'vault:renameFolder', handlers['vault:renameFolder'])
   register(ipc, 'search:query', handlers['search:query'])
   register(ipc, 'tags:list', handlers['tags:list'])
   register(ipc, 'tags:notesForTag', handlers['tags:notesForTag'])

@@ -40,10 +40,10 @@ export function TitleBar() {
   }, [])
 
   return (
-    <div className="flex h-9 shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 [-webkit-app-region:drag]" style={isMac ? { paddingLeft: '78px' } : { paddingLeft: '12px' }}>
+    <div className="flex h-9 shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 light:border-slate-200 light:bg-white [-webkit-app-region:drag]" style={isMac ? { paddingLeft: '78px' } : { paddingLeft: '12px' }}>
       <div className="flex items-center gap-2 [-webkit-app-region:no-drag]">
         <Logo className="size-5 shrink-0 rounded-[5px]" />
-        <span className="text-sm font-semibold tracking-tight text-slate-100">Slate</span>
+        <span className="text-sm font-semibold tracking-tight text-slate-100 light:text-slate-900">Slate</span>
       </div>
 
       {!isMac && (
@@ -52,7 +52,7 @@ export function TitleBar() {
             type="button"
             onClick={() => api.window.minimize()}
             title="Minimize"
-            className="flex w-11 items-center justify-center text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+            className="flex w-11 items-center justify-center text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 light:text-slate-500 light:hover:bg-slate-100 light:hover:text-slate-900"
           >
             <Minus className="size-4" aria-hidden="true" />
             <span className="sr-only">Minimize</span>
@@ -61,7 +61,7 @@ export function TitleBar() {
             type="button"
             onClick={() => api.window.toggleMaximize().then((r) => r.ok && setMaximized(r.data))}
             title={maximized ? 'Restore' : 'Maximize'}
-            className="flex w-11 items-center justify-center text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+            className="flex w-11 items-center justify-center text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 light:text-slate-500 light:hover:bg-slate-100 light:hover:text-slate-900"
           >
             {maximized ? <RestoreIcon /> : <MaximizeIcon />}
             <span className="sr-only">{maximized ? 'Restore' : 'Maximize'}</span>
@@ -70,7 +70,7 @@ export function TitleBar() {
             type="button"
             onClick={() => api.window.close()}
             title="Close"
-            className="flex w-11 items-center justify-center text-slate-400 transition hover:bg-red-600 hover:text-white"
+            className="flex w-11 items-center justify-center text-slate-400 transition hover:bg-red-600 hover:text-white light:text-slate-500"
           >
             <X className="size-4" aria-hidden="true" />
             <span className="sr-only">Close</span>

@@ -11,17 +11,17 @@ export function TabBar() {
   if (tabs.length === 0) return null
 
   return (
-    <div className="flex min-w-0 items-stretch border-b border-slate-800 bg-slate-900">
+    <div className="flex min-w-0 items-stretch border-b border-slate-800 bg-slate-900 light:border-slate-200 light:bg-slate-50">
       {tabs.map((tab) => {
         const name = tab.path.split('/').pop() ?? tab.path
         const active = tab.path === activeTabPath
         return (
           <div
             key={tab.path}
-            className={`group flex min-w-0 max-w-[200px] flex-1 items-center gap-1.5 border-r border-t-2 border-r-slate-800 py-1.5 pl-3 pr-1.5 text-xs transition ${
+            className={`group flex min-w-0 max-w-[200px] flex-1 items-center gap-1.5 border-r border-t-2 border-r-slate-800 py-1.5 pl-3 pr-1.5 text-xs transition light:border-r-slate-200 ${
               active
-                ? 'border-t-accent-500 bg-slate-950 text-slate-100'
-                : 'border-t-transparent text-slate-400 hover:bg-slate-800/70 hover:text-slate-200'
+                ? 'border-t-accent-500 bg-slate-950 text-slate-100 light:bg-white light:text-slate-900'
+                : 'border-t-transparent text-slate-400 hover:bg-slate-800/70 hover:text-slate-200 light:text-slate-500 light:hover:bg-white light:hover:text-slate-700'
             }`}
           >
             <button
@@ -39,7 +39,7 @@ export function TabBar() {
               type="button"
               onClick={() => closeTab(tab.path)}
               title="Close tab"
-              className="shrink-0 rounded p-0.5 text-slate-500 transition hover:bg-slate-700 hover:text-slate-200"
+              className="shrink-0 rounded p-0.5 text-slate-500 transition hover:bg-slate-700 hover:text-slate-200 light:hover:bg-slate-100 light:hover:text-slate-600"
             >
               <X className="size-3" aria-hidden="true" />
               <span className="sr-only">Close {name}</span>

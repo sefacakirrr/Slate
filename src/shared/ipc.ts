@@ -28,6 +28,7 @@ export type IpcCommands = {
   'settings:setTheme': { request: ThemeMode; response: undefined }
   'dialog:pickFolder': { request: undefined; response: string | null }
   'vault:listNotes': { request: undefined; response: string[] }
+  'vault:listDirs': { request: undefined; response: string[] }
   'vault:listDetailed': { request: undefined; response: NoteListItem[] }
   'vault:readNote': { request: string; response: string }
   'vault:writeNote': {
@@ -36,8 +37,10 @@ export type IpcCommands = {
   }
   'vault:createNote': { request: string; response: undefined }
   'vault:deleteNote': { request: string; response: undefined }
+  'vault:deleteFolder': { request: string; response: undefined }
   'vault:createFolder': { request: string; response: undefined }
   'vault:renameNote': { request: { from: string; to: string }; response: undefined }
+  'vault:renameFolder': { request: { from: string; to: string }; response: undefined }
   /** Full-text search over the FTS index; ranked best-first, capped server-side. */
   'search:query': { request: string; response: SearchResult[] }
   /** Drops and rebuilds the whole index from disk (the manual escape hatch). */
@@ -101,13 +104,16 @@ export type Api = {
   }
   vault: {
     listNotes: () => Promise<IpcResult<string[]>>
+    listDirs: () => Promise<IpcResult<string[]>>
     listDetailed: () => Promise<IpcResult<NoteListItem[]>>
     readNote: (path: string) => Promise<IpcResult<string>>
     writeNote: (req: { path: string; content: string }) => Promise<IpcResult<undefined>>
     createNote: (path: string) => Promise<IpcResult<undefined>>
     deleteNote: (path: string) => Promise<IpcResult<undefined>>
+    deleteFolder: (path: string) => Promise<IpcResult<undefined>>
     createFolder: (path: string) => Promise<IpcResult<undefined>>
     renameNote: (req: { from: string; to: string }) => Promise<IpcResult<undefined>>
+    renameFolder: (req: { from: string; to: string }) => Promise<IpcResult<undefined>>
   }
   search: {
     query: (query: string) => Promise<IpcResult<SearchResult[]>>

@@ -50,10 +50,13 @@ body {
   }
 }
 
-/* Slim, unobtrusive dark scrollbars (sidebar tree, tab overflow, editor). */
+/* Slim, unobtrusive scrollbars (sidebar tree, tab overflow, editor). */
 * {
   scrollbar-width: thin;
   scrollbar-color: #2a2c3a transparent;
+}
+.light * {
+  scrollbar-color: #cbd5e1 transparent;
 }
 *::-webkit-scrollbar {
   width: 10px;
@@ -65,6 +68,12 @@ body {
   background-clip: content-box;
   border-radius: 9999px;
 }
+.light *::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+}
 *::-webkit-scrollbar-thumb:hover {
   background-color: #3b3d4f;
+}
+.light *::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
 }

@@ -10,6 +10,8 @@ type VaultState = {
 
   /** Flat list of vault-relative note paths (forward slashes). */
   fileList: string[]
+  /** Flat list of vault-relative folder paths (no trailing slash). */
+  folderList: string[]
   /** True while the file list is being (re)loaded. */
   treeLoading: boolean
 
@@ -26,6 +28,8 @@ type VaultState = {
   createNote: (name?: string) => Promise<string | null>
   /** Deletes a note (optimistic, reverts on failure). */
   deleteNote: (path: string) => Promise<void>
+  /** Recursively deletes a folder and all notes inside it (optimistic). */
+  deleteFolder: (folderPath: string) => Promise<void>
   /**
    * Renames a note. Returns null on success, or the error message on failure
    * (e.g. `file-exists`, `invalid-extension`) so the caller can surface it.
@@ -34,6 +38,8 @@ type VaultState = {
   renameNote: (from: string, to: string) => Promise<string | null>
   /** Creates a new folder in the vault and refreshes the file list. */
   createFolder: (path: string) => Promise<string | null>
+  /** Moves/renames a folder within the vault (optimistic). Returns error string or null. */
+  moveFolder: (from: string, to: string) => Promise<string | null>
 }
 
 /** Case-insensitive alphabetical sort, matching VaultService's listing order. */
@@ -45,6 +51,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   vaultPath: null,
   loading: true,
   fileList: [],
+  folderList: [],
   treeLoading: false,
 
   loadVaultPath: async () => {
@@ -70,9 +77,10 @@ export const useVaultStore = create<VaultState>((set, get) => ({
 
   loadFiles: async () => {
     set({ treeLoading: true })
-    const result = await api.vault.listNotes()
+    const [notes, dirs] = await Promise.all([api.vault.listNotes(), api.vault.listDirs()])
     set({
-      fileList: result.ok ? result.data : [],
+      fileList: notes.ok ? notes.data : [],
+      folderList: dirs.ok ? dirs.data : [],
       treeLoading: false,
     })
   },
@@ -95,13 +103,26 @@ export const useVaultStore = create<VaultState>((set, get) => ({
 
   deleteNote: async (path) => {
     const previous = get().fileList
-    // Optimistic: drop it from the tree.
     set({ fileList: previous.filter((p) => p !== path) })
-
     const result = await api.vault.deleteNote(path)
     if (!result.ok) {
       console.error(`deleteNote failed: ${result.error}`)
       set({ fileList: previous })
+    }
+  },
+
+  deleteFolder: async (folderPath) => {
+    const prevFiles = get().fileList
+    const prevFolders = get().folderList
+    const prefix = folderPath + '/'
+    set({
+      fileList: prevFiles.filter((p) => !p.startsWith(prefix)),
+      folderList: prevFolders.filter((p) => p !== folderPath && !p.startsWith(prefix)),
+    })
+    const result = await api.vault.deleteFolder(folderPath)
+    if (!result.ok) {
+      console.error(`deleteFolder failed: ${result.error}`)
+      set({ fileList: prevFiles, folderList: prevFolders })
     }
   },
 
@@ -117,12 +138,38 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   },
 
   createFolder: async (path) => {
+    const prevFolders = get().folderList
+    set({ folderList: [...prevFolders, path].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())) })
     const result = await api.vault.createFolder(path)
     if (!result.ok) {
       console.error(`createFolder failed: ${result.error}`)
+      set({ folderList: prevFolders })
       return result.error
     }
-    await get().loadFiles()
+    return null
+  },
+
+  moveFolder: async (from, to) => {
+    if (from === to) return null
+    const { fileList, folderList } = get()
+    const fromPrefix = from + '/'
+    const toPrefix = to + '/'
+    const prevFiles = fileList
+    const prevFolders = folderList
+    set({
+      fileList: sortPaths(fileList.map((p) => (p.startsWith(fromPrefix) ? toPrefix + p.slice(fromPrefix.length) : p))),
+      folderList: sortPaths([
+        ...folderList.filter((p) => p !== from && !p.startsWith(fromPrefix)),
+        to,
+        ...folderList.filter((p) => p.startsWith(fromPrefix)).map((p) => toPrefix + p.slice(fromPrefix.length)),
+      ]),
+    })
+    const result = await api.vault.renameFolder({ from, to })
+    if (!result.ok) {
+      console.error(`moveFolder failed: ${result.error}`)
+      set({ fileList: prevFiles, folderList: prevFolders })
+      return result.error
+    }
     return null
   },
 }))

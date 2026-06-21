@@ -1,9 +1,24 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, open, readdir, readFile, rename, stat, unlink } from 'node:fs/promises'
+import { mkdir, open, readdir, readFile, rename, rm, stat, unlink } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
 
 /** Extensions Slate treats as notes. User-decided at bootstrap. */
 const NOTE_EXTENSIONS = ['.md', '.markdown', '.txt']
+
+function stripFormatting(text: string): string {
+  return text
+    .replace(/^\{align:(left|center|right)\}/gm, '')
+    .replace(/\{color:\w+\}/g, '')
+    .replace(/\{\/color\}/g, '')
+    .replace(/==([^=]+)==\{\.\w+\}/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/(?<!\w)_([^_]+)_(?!\w)/g, '$1')
+    .replace(/\+\+([^+]+)\+\+/g, '$1')
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^(\s*)[-*+]\s\[[ xX]\]\s?/gm, '$1')
+    .trim()
+}
 
 /** A note's vault-relative path paired with its on-disk modification time (ms). */
 export type NoteStat = {
@@ -61,22 +76,40 @@ export class VaultService {
         const lines = content.split('\n')
         const titleLine = lines.find((l) => l.trim().length > 0) ?? ''
         const title =
-          titleLine.replace(/^#+\s*/, '').trim() ||
+          stripFormatting(titleLine.replace(/^#+\s*/, '')) ||
           f.rel
             .split('/')
             .pop()
             ?.replace(/\.\w+$/, '') ||
           f.rel
-        const snippetText = lines
-          .filter((l) => l.trim().length > 0)
-          .slice(0, 3)
-          .join(' ')
-          .slice(0, 120)
+        const snippetText = stripFormatting(
+          lines
+            .filter((l) => l.trim().length > 0)
+            .slice(0, 3)
+            .join(' ')
+            .slice(0, 180),
+        ).slice(0, 120)
         return { path: f.rel, title, snippet: snippetText, mtime: Math.floor(s.mtimeMs) }
       }),
     )
     items.sort((a, b) => b.mtime - a.mtime)
     return items
+  }
+
+  /** Lists all subdirectory paths (vault-relative, forward-slash) excluding hidden/underscored ones. */
+  async listDirs(): Promise<string[]> {
+    const entries = await readdir(this.vaultRoot, { withFileTypes: true, recursive: true })
+    const dirs: string[] = []
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const abs = resolve(entry.parentPath, entry.name)
+      const rel = relative(this.vaultRoot, abs)
+      const segments = rel.split(sep)
+      if (segments.some((s) => s.startsWith('_') || s.startsWith('.'))) continue
+      dirs.push(segments.join('/'))
+    }
+    dirs.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    return dirs
   }
 
   /** A single note's modification time (ms, integer). Path is vault-safe. */
@@ -187,6 +220,22 @@ export class VaultService {
     await rename(fromAbs, toAbs)
   }
 
+  /** Moves/renames a folder. Rejects if the target already exists. */
+  async renameFolder(fromRel: string, toRel: string): Promise<void> {
+    const fromAbs = this.resolveSafe(fromRel)
+    const toAbs = this.resolveSafe(toRel)
+    if (toAbs.startsWith(fromAbs + sep)) throw new Error('cannot-move-into-self')
+    try {
+      await stat(toAbs)
+      throw new Error('folder-exists')
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code !== 'ENOENT') throw err
+    }
+    await mkdir(dirname(toAbs), { recursive: true })
+    await rename(fromAbs, toAbs)
+  }
+
   /**
    * Creates a directory inside the vault. Uses recursive mkdir so intermediate
    * segments are created. Rejects if the final path already exists as a file.
@@ -210,6 +259,12 @@ export class VaultService {
       }
       throw err
     }
+  }
+
+  /** Recursively deletes a folder and all its contents. */
+  async deleteFolder(relPath: string): Promise<void> {
+    const abs = this.resolveSafe(relPath)
+    await rm(abs, { recursive: true, force: true })
   }
 
   /**

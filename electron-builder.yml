@@ -1,5 +1,12 @@
 appId: com.slate.app
 productName: Slate
+copyright: Copyright © 2024 Sefa Gülenayva
+
+publish:
+  provider: github
+  owner: sefacakirrr
+  repo: Slate
+  releaseType: release
 directories:
   output: release
   buildResources: resources
@@ -10,24 +17,57 @@ asar: true
 asarUnpack:
   - "**/node_modules/better-sqlite3/**"
 npmRebuild: true
+
+mac:
+  target:
+    - target: dmg
+      arch: arm64
+    - target: dmg
+      arch: x64
+  icon: resources/icon.icns
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  category: public.app-category.productivity
+  darkModeSupport: true
+  minimumSystemVersion: "12.0"
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlementsInherit: build/entitlements.mac.plist
+
+dmg:
+  title: ${productName} ${version}
+  background: null
+  window:
+    width: 540
+    height: 380
+  contents:
+    - x: 150
+      y: 185
+    - x: 390
+      y: 185
+      type: link
+      path: /Applications
+
 win:
-  target: nsis
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
   icon: resources/icon.ico
-  artifactName: ${productName}-${version}-setup.${ext}
+  artifactName: ${productName}-${version}-setup-${arch}.${ext}
+
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   perMachine: false
-mac:
-  target: dmg
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Slate
+
+linux:
+  target:
+    - target: AppImage
+      arch: x64
   icon: resources/icon.png
-  artifactName: ${productName}-${version}.${ext}
-  category: public.app-category.productivity
-dmg:
-  contents:
-    - x: 130
-      y: 220
-    - x: 410
-      y: 220
-      type: link
-      path: /Applications
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  category: Utility

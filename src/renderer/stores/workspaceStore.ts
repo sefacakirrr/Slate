@@ -47,6 +47,8 @@ type WorkspaceState = {
   reset: () => void
   /** Re-points an open tab after a rename, keeping its draft/baseline/dirty. */
   renameTab: (oldPath: string, newPath: string) => void
+  /** Closes all tabs whose paths are inside the given folder (no dirty check). */
+  closeFolderTabs: (folderPath: string) => void
 }
 
 /** Fire-and-forget persistence of the open-tab set + active tab. */
@@ -188,5 +190,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       activeTabPath: s.activeTabPath === oldPath ? newPath : s.activeTabPath,
     }))
     persistWorkspace(get().tabs, get().activeTabPath)
+  },
+
+  closeFolderTabs: (folderPath) => {
+    const prefix = folderPath + '/'
+    const { tabs, activeTabPath } = get()
+    const next = tabs.filter((t) => t.path !== folderPath && !t.path.startsWith(prefix))
+    const active = next.some((t) => t.path === activeTabPath)
+      ? activeTabPath
+      : (next[next.length - 1]?.path ?? null)
+    set({ tabs: next, activeTabPath: active })
+    persistWorkspace(next, active)
   },
 }))

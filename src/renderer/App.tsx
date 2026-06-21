@@ -130,7 +130,7 @@ function MainApp() {
 
   function renderBody() {
     if (loading && vaultPath === null) {
-      return <div className="h-full bg-slate-950" />
+      return <div className="h-full bg-slate-950 light:bg-white" />
     }
 
     if (vaultPath === null) {
@@ -142,7 +142,7 @@ function MainApp() {
         <Panel defaultSize={25} minSize={18} className="overflow-hidden">
           <Sidebar />
         </Panel>
-        <PanelResizeHandle className="w-px bg-slate-800 transition-colors hover:bg-accent-500 data-[resize-handle-active]:bg-accent-500" />
+        <PanelResizeHandle className="w-px bg-slate-800 transition-colors hover:bg-accent-500 data-[resize-handle-active]:bg-accent-500 light:bg-slate-200" />
         <Panel defaultSize={75} className="overflow-hidden">
           <ContentPane />
         </Panel>

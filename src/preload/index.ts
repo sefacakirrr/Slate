@@ -27,13 +27,16 @@ const api: Api = {
   },
   vault: {
     listNotes: () => invoke('vault:listNotes'),
+    listDirs: () => invoke('vault:listDirs'),
     listDetailed: () => invoke('vault:listDetailed'),
     readNote: (path) => invoke('vault:readNote', path),
     writeNote: (req) => invoke('vault:writeNote', req),
     createNote: (path) => invoke('vault:createNote', path),
     deleteNote: (path) => invoke('vault:deleteNote', path),
+    deleteFolder: (path) => invoke('vault:deleteFolder', path),
     createFolder: (path) => invoke('vault:createFolder', path),
     renameNote: (req) => invoke('vault:renameNote', req),
+    renameFolder: (req) => invoke('vault:renameFolder', req),
   },
   search: {
     query: (query) => invoke('search:query', query),
