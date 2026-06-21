@@ -43,6 +43,16 @@ GitHub kendi sunucularında Mac (arm64 + x64) ve Windows (x64) için build alır
 | `Slate-x.x.x-x64.dmg` | Mac — Intel |
 | `Slate-x.x.x-setup-x64.exe` | Windows |
 
+## macOS — İlk Açılış
+
+macOS "hasar görmüş" veya "geliştirici doğrulanamıyor" diyebilir (app Apple sertifikasıyla imzalanmamış). Tek seferlik çözüm:
+
+```bash
+xattr -cr /Applications/Slate.app
+```
+
+Veya: System Settings → Privacy & Security → sayfanın altında "Open Anyway" butonuna tıkla.
+
 ## Otomatik Güncelleme
 
 Uygulamayı kurmuş olan kullanıcılar yeni sürüm çıkınca otomatik bildirim alır ve uygulamayı yeniden başlatınca güncelleme uygulanır — tekrar kurulum gerekmez.
