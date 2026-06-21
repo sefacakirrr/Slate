@@ -10,7 +10,14 @@ permissions:
 
 jobs:
   build-mac:
-    runs-on: macos-14
+    strategy:
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+          - runner: macos-13
+            arch: x64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
@@ -22,8 +29,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build & publish (arm64 DMG)
-        run: npx electron-vite build && npx electron-builder --mac --arm64 --publish always
+      - name: Build & publish (${{ matrix.arch }} DMG)
+        run: npx electron-vite build && npx electron-builder --mac --${{ matrix.arch }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

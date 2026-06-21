@@ -21,9 +21,6 @@ npmRebuild: true
 mac:
   target:
     - target: dmg
-      arch: arm64
-    - target: dmg
-      arch: x64
   icon: resources/icon.icns
   artifactName: ${productName}-${version}-${arch}.${ext}
   category: public.app-category.productivity
