@@ -13,6 +13,7 @@
     "node": ">=20.0.0"
   },
   "scripts": {
+    "setup": "npm install --ignore-scripts && node node_modules/electron/install.js && electron-builder install-app-deps",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",

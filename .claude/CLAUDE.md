@@ -19,22 +19,36 @@ See `.claude/PROJECT-VISION.md` for the vision, `.claude/TECHSTACK.md` for stack
 - **Lint/Format**: Biome
 - **Test**: Vitest
 
+## Setup (first time, after clone)
+
+```
+npm run setup
+```
+
+This single command handles everything:
+1. `npm install --ignore-scripts` — downloads all packages without triggering native builds
+2. Downloads the Electron binary
+3. Rebuilds `better-sqlite3` against Electron's Node ABI (not system Node)
+
+This works on **any Node version** (20, 22, 24+) and any platform (Windows, macOS, Linux) without needing Python or a C++ compiler.
+
 ## Build & Run
 
 - `npm run dev` — start the dev environment (electron-vite with HMR)
 - `npm run build` — build to `out/`
 - `npm run package` — build + electron-builder `--dir` (unpacked output for inspection)
-- `npm run dist` — build + electron-builder (NSIS installer in `release/`)
+- `npm run dist` — build + electron-builder (installer in `release/`)
+- `npm run dist:win` — Windows only (NSIS)
+- `npm run dist:mac` — macOS only (DMG)
+- `npm run dist:linux` — Linux only (AppImage)
 
-### Native module rebuild (one-time, Windows)
+### Manual native rebuild
 
-`better-sqlite3` is a native Node module and must be rebuilt against Electron's Node ABI before the index/search layer will run. `electron-builder` handles this automatically during `npm run dist` / `npm run package`, but for dev you need it up front.
+If you need to re-rebuild native modules (e.g. after an Electron upgrade):
 
 ```
 npm run rebuild
 ```
-
-This runs `electron-builder install-app-deps` which downloads the correct prebuilt binary for your Electron version. No C++ compiler needed (prebuilds are available for all platforms). Run it manually the first time and after any Electron upgrade.
 
 ## Test
 

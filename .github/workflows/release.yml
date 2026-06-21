@@ -23,11 +23,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24.4.1
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm run setup
 
       - name: Build & publish (${{ matrix.arch }} DMG)
         run: npx electron-vite build && npx electron-builder --mac --${{ matrix.arch }} --publish always
@@ -41,11 +41,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24.4.1
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm run setup
 
       - name: Build & publish (x64 installer)
         run: npx electron-vite build && npx electron-builder --win --x64 --publish always

@@ -5,10 +5,11 @@ Personal local-first notes app for code and life. Markdown files on disk, WYSIWY
 ## Geliştirme
 
 ```bash
-npm install       # bağımlılıkları kur
+npm run setup     # bağımlılıkları kur + native modülleri Electron ABI'ye rebuild et
 npm run dev       # uygulamayı geliştirme modunda başlat
-npm run rebuild   # better-sqlite3 native modülünü yeniden derle (Electron upgrade sonrası)
 ```
+
+> `npm run setup` her Node sürümünde (20, 22, 24+) ve her platformda (Windows, macOS, Linux) Python veya C++ compiler gerektirmeden çalışır. Normal `npm install` yerine bunu kullanın.
 
 ## Yeni Sürüm Yayınlama
 
