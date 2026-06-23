@@ -12,25 +12,25 @@ const darkTheme = EditorView.theme(
   {
     '&': {
       height: '100%',
-      backgroundColor: '#020617',
+      backgroundColor: '#0a0e1a',
       color: '#cbd5e1',
       fontSize: '13px',
     },
     '.cm-content': {
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
       padding: '12px 0',
-      caretColor: '#c47dff',
+      caretColor: '#a78bfa',
     },
     '.cm-gutters': {
-      backgroundColor: '#020617',
+      backgroundColor: '#0a0e1a',
       color: '#475569',
       border: 'none',
     },
-    '.cm-activeLine': { backgroundColor: '#0f172a66' },
-    '.cm-activeLineGutter': { backgroundColor: '#0f172a66', color: '#94a3b8' },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#c47dff' },
-    '.cm-selectionBackground': { backgroundColor: '#b14bf033' },
-    '&.cm-focused .cm-selectionBackground': { backgroundColor: '#b14bf04d' },
+    '.cm-activeLine': { backgroundColor: '#131a2b66' },
+    '.cm-activeLineGutter': { backgroundColor: '#131a2b66', color: '#94a3b8' },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#a78bfa' },
+    '.cm-selectionBackground': { backgroundColor: '#8b5cf633' },
+    '&.cm-focused .cm-selectionBackground': { backgroundColor: '#8b5cf64d' },
     '&.cm-focused': { outline: 'none' },
     '.cm-scroller': { overflow: 'auto' },
   },
@@ -48,7 +48,7 @@ const lightTheme = EditorView.theme(
     '.cm-content': {
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
       padding: '12px 0',
-      caretColor: '#9a30dd',
+      caretColor: '#6d28d9',
     },
     '.cm-gutters': {
       backgroundColor: '#f8fafc',
@@ -57,9 +57,9 @@ const lightTheme = EditorView.theme(
     },
     '.cm-activeLine': { backgroundColor: '#f1f5f922' },
     '.cm-activeLineGutter': { backgroundColor: '#f1f5f9', color: '#64748b' },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#9a30dd' },
-    '.cm-selectionBackground': { backgroundColor: '#b14bf020' },
-    '&.cm-focused .cm-selectionBackground': { backgroundColor: '#b14bf030' },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#6d28d9' },
+    '.cm-selectionBackground': { backgroundColor: '#8b5cf620' },
+    '&.cm-focused .cm-selectionBackground': { backgroundColor: '#8b5cf630' },
     '&.cm-focused': { outline: 'none' },
     '.cm-scroller': { overflow: 'auto' },
   },
@@ -84,6 +84,9 @@ export function createTabState(opts: TabStateOptions, resolved: 'dark' | 'light'
     doc: opts.doc,
     extensions: [
       basicSetup,
+      // Wrap long lines onto the next visual row instead of scrolling
+      // horizontally. Wrapped task lines continue under the checkbox.
+      EditorView.lineWrapping,
       themeCompartment.of(getEditorTheme(resolved)),
       languageExtension(opts.path),
       attachmentExtension(),

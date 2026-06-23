@@ -8,11 +8,15 @@ import {
   WidgetType,
 } from '@codemirror/view'
 
-const TASK_RE = /^(\s*[-*+]\s)\[([ xX])\]/gm
+// Capture: leading indent, bullet + space, the [ ] state, and an optional
+// trailing space. The whole `- [ ] ` run (minus leading indent) is replaced by
+// the checkbox widget so no inline marker remains in the text flow.
+const TASK_RE = /^(\s*)([-*+] )\[([ xX])\]( ?)/gm
 
 type TaskMatch = {
   from: number
   to: number
+  checkPos: number
   checked: boolean
   lineFrom: number
 }
@@ -22,13 +26,18 @@ function findTasks(doc: string): TaskMatch[] {
   let match: RegExpExecArray | null = TASK_RE.exec(doc)
   while (match !== null) {
     const fullStart = match.index
-    const prefix = match[1]
-    const bracketStart = fullStart + prefix.length
-    const bracketEnd = bracketStart + 3
+    const leadingWs = match[1]
+    const bullet = match[2]
+    const trailing = match[4]
+    const bulletStart = fullStart + leadingWs.length
+    // `- [ ] `: bullet(2) `[`(1) state(1) `]`(1) + optional space.
+    const checkPos = bulletStart + bullet.length + 1
+    const to = bulletStart + bullet.length + 3 + trailing.length
     results.push({
-      from: bracketStart,
-      to: bracketEnd,
-      checked: match[2] !== ' ',
+      from: bulletStart,
+      to,
+      checkPos,
+      checked: match[3] !== ' ',
       lineFrom: fullStart,
     })
     match = TASK_RE.exec(doc)
@@ -39,35 +48,47 @@ function findTasks(doc: string): TaskMatch[] {
 
 class CheckboxWidget extends WidgetType {
   private readonly checked: boolean
-  private readonly pos: number
+  private readonly checkPos: number
 
-  constructor(checked: boolean, pos: number) {
+  constructor(checked: boolean, checkPos: number) {
     super()
     this.checked = checked
-    this.pos = pos
+    this.checkPos = checkPos
   }
 
   eq(other: CheckboxWidget): boolean {
-    return this.checked === other.checked && this.pos === other.pos
+    return this.checked === other.checked && this.checkPos === other.checkPos
   }
 
   toDOM(view: EditorView): HTMLElement {
-    const span = document.createElement('span')
-    span.className = 'cm-checkbox-widget'
-    span.style.display = 'inline-flex'
-    span.style.alignItems = 'center'
-    span.style.justifyContent = 'center'
-    span.style.width = '16px'
-    span.style.height = '16px'
-    span.style.borderRadius = '50%'
-    span.style.border = this.checked ? 'none' : '2px solid #64748b'
-    span.style.backgroundColor = this.checked ? '#8b5cf6' : 'transparent'
-    span.style.cursor = 'pointer'
-    span.style.verticalAlign = 'middle'
-    span.style.marginRight = '4px'
-    span.style.flexShrink = '0'
-    span.style.transition = 'background-color 150ms, border-color 150ms'
-    span.contentEditable = 'false'
+    // Outer wrapper: pulled out of the text flow into the left gutter so the
+    // editable text wraps cleanly to its right with a hanging indent. Its
+    // height matches one line so the box vertically centres on the first row.
+    const wrap = document.createElement('span')
+    wrap.className = 'cm-checkbox-widget'
+    wrap.style.position = 'absolute'
+    wrap.style.left = '0'
+    wrap.style.top = '0'
+    wrap.style.height = `${view.defaultLineHeight}px`
+    wrap.style.display = 'inline-flex'
+    wrap.style.alignItems = 'center'
+    wrap.style.justifyContent = 'center'
+    wrap.style.width = '16px'
+    wrap.style.cursor = 'pointer'
+    wrap.contentEditable = 'false'
+
+    const box = document.createElement('span')
+    box.style.display = 'inline-flex'
+    box.style.alignItems = 'center'
+    box.style.justifyContent = 'center'
+    box.style.width = '16px'
+    box.style.height = '16px'
+    box.style.borderRadius = '50%'
+    box.style.border = this.checked ? 'none' : '2px solid #64748b'
+    box.style.backgroundColor = this.checked ? '#8b5cf6' : 'transparent'
+    box.style.flexShrink = '0'
+    box.style.transition = 'background-color 150ms, border-color 150ms'
+    wrap.appendChild(box)
 
     if (this.checked) {
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -82,21 +103,21 @@ class CheckboxWidget extends WidgetType {
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
       path.setAttribute('d', 'M20 6L9 17l-5-5')
       svg.appendChild(path)
-      span.appendChild(svg)
+      box.appendChild(svg)
     }
 
-    const pos = this.pos
+    const checkPos = this.checkPos
     const checked = this.checked
-    span.addEventListener('mousedown', (e) => {
+    wrap.addEventListener('mousedown', (e) => {
       e.preventDefault()
       e.stopPropagation()
       const newChar = checked ? ' ' : 'x'
       view.dispatch({
-        changes: { from: pos + 1, to: pos + 2, insert: newChar },
+        changes: { from: checkPos, to: checkPos + 1, insert: newChar },
       })
     })
 
-    return span
+    return wrap
   }
 
   ignoreEvent(): boolean {
@@ -104,10 +125,11 @@ class CheckboxWidget extends WidgetType {
   }
 }
 
-const checkedLineDeco = Decoration.line({
-  attributes: {
-    style: 'opacity: 0.5; text-decoration: line-through; text-decoration-color: #64748b;',
-  },
+// Line decorations give the task line its hanging-indent column (padding-left)
+// and a positioning context for the absolutely placed checkbox.
+const taskLineDeco = Decoration.line({ attributes: { class: 'cm-task-line' } })
+const taskLineCheckedDeco = Decoration.line({
+  attributes: { class: 'cm-task-line cm-task-checked' },
 })
 
 function buildDecorations(view: EditorView): DecorationSet {
@@ -119,14 +141,18 @@ function buildDecorations(view: EditorView): DecorationSet {
 
   for (const task of tasks) {
     if (task.to > view.state.doc.length) continue
-    const widget = new CheckboxWidget(task.checked, task.from)
+    const widget = new CheckboxWidget(task.checked, task.checkPos)
+    const line = view.state.doc.lineAt(task.from)
+    sorted.push({
+      pos: line.from,
+      end: line.from,
+      deco: task.checked ? taskLineCheckedDeco : taskLineDeco,
+    })
     sorted.push({ pos: task.from, end: task.to, deco: Decoration.replace({ widget }) })
-    if (task.checked) {
-      const line = view.state.doc.lineAt(task.from)
-      sorted.push({ pos: line.from, end: line.from, deco: checkedLineDeco })
-    }
   }
 
+  // Line decorations (end === pos) must precede the replace range at the same
+  // offset; sorting by pos then end guarantees that.
   sorted.sort((a, b) => a.pos - b.pos || a.end - b.end)
   for (const s of sorted) {
     builder.add(s.pos, s.end, s.deco)
