@@ -20,7 +20,7 @@ export class WindowManager {
       frame: isMac,
       titleBarStyle: isMac ? 'hiddenInset' : undefined,
       trafficLightPosition: isMac ? { x: 12, y: 12 } : undefined,
-      backgroundColor: '#020617',
+      backgroundColor: '#0a0e1a',
       autoHideMenuBar: true,
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
@@ -75,7 +75,7 @@ export class WindowManager {
       resizable: false,
       skipTaskbar: true,
       vibrancy: isMac ? 'under-window' : undefined,
-      backgroundColor: isMac ? undefined : '#020617',
+      backgroundColor: isMac ? undefined : '#0a0e1a',
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         contextIsolation: true,
