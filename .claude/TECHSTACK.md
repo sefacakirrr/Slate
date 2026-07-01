@@ -42,6 +42,17 @@ Considered:
 Notes are plain `.md` files in a user-chosen "vault" folder — portable, future-proof, survives Slate going away. A local SQLite database (via `better-sqlite3`) indexes content for full-text search and stores metadata (tags, recents, pins) without polluting the markdown.
 Considered: pure-JS search libraries (MiniSearch, Flexsearch) — viable for small libraries but slower at scale, and SQLite's SQL surface is valuable for compound queries (tag + folder + recency).
 
+## Encryption (optional per-note locking)
+
+**Node's built-in `crypto` — `scrypt` (KDF) + `AES-256-GCM` (cipher). Zero new dependencies.**
+
+Locked notes are encrypted at rest: the vault password is stretched with `scryptSync` (per-note random salt) into a 256-bit key, and the content is sealed with `AES-256-GCM` (per-note random nonce, built-in authentication tag). The password lives only in main-process memory for the session — never written to disk, never sent to the renderer (encrypt/decrypt happen in main; only plaintext or ciphertext crosses IPC).
+
+Considered and rejected:
+- **Argon2id** (`argon2` / `@node-rs/argon2`) — marginally stronger KDF, but it's a **native module**. Slate already pays a native-module tax with `better-sqlite3` (Electron ABI rebuilds, CI matrix pain visible in the build history). A second native dependency compounds packaging fragility for a benefit that is negligible for a single-user local app. `scrypt` is memory-hard, built into Node, and more than sufficient here.
+- **libsodium / `tweetnacl`** — capable, but again an extra dependency for what Node's `crypto` already does natively.
+- **OS keychain as the key store** — rejected at the vision level: no key escrow, no "remember on device". The password is the only key material and it stays in the user's head.
+
 ## Key Libraries
 
 | Library | Purpose | Rationale |
@@ -80,3 +91,4 @@ E2E testing (Playwright) is deferred — for a personal app, manual testing is s
 - **`better-sqlite3` native module**: requires rebuilding for Electron's Node ABI. `electron-builder` handles this but it's an occasional source of pain on upgrades. Mitigation: pin Electron and `better-sqlite3` versions together; rebuild via `electron-rebuild` if needed.
 - **Tailwind v4**: relatively new major version; minor ecosystem churn possible. Acceptable risk for greenfield project.
 - **Biome maturity**: very capable in 2026 but smaller ecosystem of custom rules than ESLint. If a specific lint rule is missing, swap-out cost to ESLint+Prettier is modest.
+- **Encryption correctness & data loss**: a bug in the encrypt/decrypt path (wrong nonce handling, truncated tag, format version drift) or a forgotten password both mean unrecoverable content — there is no recovery by design. Mitigation: keep the crypto path tiny and standard (`scrypt` + `AES-256-GCM`, no custom scheme), version the on-disk format header from day one, and cover round-trip + tamper-detection + wrong-password cases with tests before the feature ships.

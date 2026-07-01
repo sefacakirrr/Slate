@@ -4,6 +4,7 @@ import { app, BrowserWindow, ipcMain, net, protocol } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { registerIpcHandlers } from './ipc/handlers'
 import { AttachmentService } from './services/AttachmentService'
+import { EncryptionService } from './services/EncryptionService'
 import { IndexService } from './services/IndexService'
 import { reconcileIndex } from './services/reconcile'
 import { SearchService } from './services/SearchService'
@@ -53,12 +54,15 @@ app.whenReady().then(async () => {
     const cached = settings.getVaultPathSync()
     return cached
   })
+  // Holds the vault session key in memory only (Epic 10). No disk/keychain.
+  const encryption = new EncryptionService()
 
   registerIpcHandlers(ipcMain, {
     settings,
     index: idx,
     search,
     attachment,
+    encryption,
     windowManager,
     getMainWindow: () => windowManager.getMainWindow(),
   })

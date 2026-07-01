@@ -93,5 +93,6 @@ src/
 - **Main services don't import React/Zustand.** Pure TypeScript modules.
 - **Shared package contains types only**, no runtime code.
 - **Source of truth**: files on disk. SQLite is a derived, rebuildable index.
+- **Locked notes (planned, E10)**: notes the user explicitly locks are encrypted at rest (scrypt + AES-256-GCM via Node `crypto`, single vault password held only in main-process memory). Locked notes are **excluded from the FTS index** — leaving one in the plaintext index leaks its contents. No password recovery by design.
 - **Functional-leaning TS.** Classes only for main-process services owning stateful resources (DB connection, watcher).
 - **Errors**: throw at service layer; catch at IPC boundary; deliver `IpcResult<T>` to renderer.

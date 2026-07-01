@@ -41,6 +41,22 @@ export type IpcCommands = {
   'vault:createFolder': { request: string; response: undefined }
   'vault:renameNote': { request: { from: string; to: string }; response: undefined }
   'vault:renameFolder': { request: { from: string; to: string }; response: undefined }
+  /** Whether a vault password has been set (Epic 10). */
+  'vault:hasPassword': { request: undefined; response: boolean }
+  /** First-time vault password setup. Rejects if one already exists. */
+  'vault:setPassword': { request: { password: string }; response: undefined }
+  /** Unlock the vault for this session. Resolves true on success, false on a wrong password. */
+  'vault:unlock': { request: { password: string }; response: boolean }
+  /** Clear the session key — the vault re-locks immediately. */
+  'vault:lockVault': { request: undefined; response: undefined }
+  /** Whether the vault is currently unlocked (a session key is held). */
+  'vault:isVaultUnlocked': { request: undefined; response: boolean }
+  /** Whether a given path is a locked (encrypted) note. */
+  'vault:isLocked': { request: string; response: boolean }
+  /** Encrypt a plaintext note in place → `<path>.enc`. Requires an unlocked vault. Returns the new path. */
+  'vault:lockNote': { request: string; response: { path: string } }
+  /** Decrypt a locked note back to plaintext, removing `.enc`. Requires an unlocked vault. Returns the new path. */
+  'vault:unlockNote': { request: string; response: { path: string } }
   /** Full-text search over the FTS index; ranked best-first, capped server-side. */
   'search:query': { request: string; response: SearchResult[] }
   /** Drops and rebuilds the whole index from disk (the manual escape hatch). */
@@ -114,6 +130,14 @@ export type Api = {
     createFolder: (path: string) => Promise<IpcResult<undefined>>
     renameNote: (req: { from: string; to: string }) => Promise<IpcResult<undefined>>
     renameFolder: (req: { from: string; to: string }) => Promise<IpcResult<undefined>>
+    hasPassword: () => Promise<IpcResult<boolean>>
+    setPassword: (req: { password: string }) => Promise<IpcResult<undefined>>
+    unlock: (req: { password: string }) => Promise<IpcResult<boolean>>
+    lockVault: () => Promise<IpcResult<undefined>>
+    isVaultUnlocked: () => Promise<IpcResult<boolean>>
+    isLocked: (path: string) => Promise<IpcResult<boolean>>
+    lockNote: (path: string) => Promise<IpcResult<{ path: string }>>
+    unlockNote: (path: string) => Promise<IpcResult<{ path: string }>>
   }
   search: {
     query: (query: string) => Promise<IpcResult<SearchResult[]>>

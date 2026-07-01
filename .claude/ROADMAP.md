@@ -2,7 +2,7 @@
 
 > **Project**: Slate
 > **Created**: 2026-05-18
-> **Last updated**: 2026-06-15
+> **Last updated**: 2026-07-01
 
 ---
 
@@ -34,6 +34,7 @@
 | **Capture & Shortcuts** | ShortcutManager, quick-capture window, in-app keymap | COMPLETE | E7 (done) | M2 |
 | **Settings & UX Polish** | SettingsService, settings UI, dark/light/system theme, vault config, custom hotkey binding | COMPLETE (basic) | E8 (done — settings panel + theme toggle; custom hotkey rebind → M3) | M2 (dark mode + vault config) → M3 (full polish) |
 | **Packaging & Distribution** | electron-builder NSIS installer, native module rebuild docs, version handling | NOT STARTED | — | M3 |
+| **Note Encryption / Locking** | EncryptionService (scrypt + AES-256-GCM), vault-password unlock/lock flow, per-note lock/unlock UI, encrypted on-disk format, index exclusion of locked notes | COMPLETE | E10 (done) | M3+ |
 
 **Status values**: NOT STARTED → IN PROGRESS → COMPLETE
 
@@ -53,6 +54,7 @@
 | E6 | epic | Attachments — paste/drop → hash storage, inline image widget, file chip widget, open-in-app, delete button (user-verified) | 2026-06-19 | Attachments |
 | E7 | epic | Capture & Shortcuts — WindowManager, ShortcutManager, Ctrl+Shift+N global hotkey, quick-capture popup (user-verified) | 2026-06-19 | Capture & Shortcuts |
 | E8 | epic | Settings UI & Theme — Settings panel, dark/light/system toggle, CM6 theme switching, vault path display (user-verified) | 2026-06-19 | Settings & UX Polish |
+| E10 | epic | Note Encryption — optional per-note at-rest encryption (scrypt + AES-256-GCM), single vault password in memory, `.md.enc` container, FTS index exclusion, lock/unlock UI (user-verified on macOS; Windows round-trip deferred). Shipped in v0.1.8 | 2026-07-01 | Note Encryption / Locking |
 
 Vision, TECHSTACK.md, ARCHITECTURE.md authored; Electron+React+Tailwind+CodeMirror scaffold built and verified end-to-end (`npm run build`, `npm run check`, `npm run typecheck` all green; `npm run dev` launches an empty shell). Pre-feature state.
 
@@ -60,9 +62,11 @@ Vision, TECHSTACK.md, ARCHITECTURE.md authored; Electron+React+Tailwind+CodeMirr
 
 ## Vision Alignment
 
-**Aligned — no feature work done yet.**
+**Aligned.** One deliberate vision revision on record.
 
-PROJECT-VISION.md non-goals are encoded as architectural constraints (no sync, no plugins, no AI, no mobile/web). The architecture supports every Tier-1 capability listed in the vision. No drift to flag.
+PROJECT-VISION.md non-goals are encoded as architectural constraints (no sync, no plugins, no AI, no mobile/web). The architecture supports every Tier-1 capability listed in the vision.
+
+- **2026-07-01 — Optional per-note at-rest encryption added to scope** via `/project-revise`. This is a conscious, opt-in exception to the "all notes are portable plain markdown" success criterion — only notes the user explicitly locks are affected. It stays fully local (reinforces, not violates, "no cloud/sync"): scrypt + AES-256-GCM, single vault password held only in memory, no keychain, no recovery. Tracked as the **Note Encryption / Locking** stream (E10, planned).
 
 ---
 
@@ -71,3 +75,4 @@ PROJECT-VISION.md non-goals are encoded as architectural constraints (no sync, n
 - **VS Build Tools dependency.** Search/indexing (M2) cannot ship until `better-sqlite3` is rebuilt against Electron's Node ABI, which requires Visual Studio Build Tools 2022 (Desktop development with C++) on the dev machine. Mitigation: M1 work has zero dependency on SQLite, so it can proceed in parallel with the tooling install.
 - **CodeMirror 6 WYSIWYG complexity.** Live-preview decorations are the single highest-risk piece of the editor work. Mitigation: start E2 with the simplest possible CM6 + markdown setup; add live-preview decorations as a second slice, not a prerequisite.
 - **Vision Tier-2 creep.** The vision explicitly defers backlinks, daily notes, templates, outlines. Risk: implementing one of them pre-emptively "while we're here." Mitigation: ROADMAP.md does not list any of those streams; if a Tier-2 feature gets added later, it must come via `/project-revise`.
+- **Encryption data loss & index leak (E10).** No password recovery means a forgotten vault password is permanent content loss; and locked notes left in the plaintext FTS index would leak their contents. Mitigation: unmistakable no-recovery warnings at lock time; treat index exclusion of locked notes as a hard security requirement with tests, not an optimization. Keep the crypto path standard and versioned (scrypt + AES-256-GCM).

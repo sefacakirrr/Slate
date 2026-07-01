@@ -1,3 +1,4 @@
+import { isEncryptedPath } from './EncryptionService'
 import type { IndexService } from './IndexService'
 import type { VaultService } from './VaultService'
 
@@ -21,6 +22,13 @@ export async function reconcileIndex(vault: VaultService, index: IndexService): 
   const stale = new Map(index.getIndexed().map((n) => [n.path, n.mtime]))
 
   for (const { path, mtime } of disk) {
+    // Locked notes are never indexed — their content is encrypted at rest, and
+    // indexing it would both fail (ciphertext isn't utf-8 text we want) and, if
+    // it somehow succeeded, leak plaintext into the searchable index. Skip
+    // before any read. `stale` never contains a `.enc` path (they're removed
+    // from the index on lock), so no orphan cleanup is needed here.
+    if (isEncryptedPath(path)) continue
+
     const indexedMtime = stale.get(path)
     if (indexedMtime === undefined || mtime > indexedMtime) {
       index.indexNote(path, await vault.readNote(path), mtime)

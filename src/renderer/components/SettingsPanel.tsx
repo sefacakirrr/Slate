@@ -1,4 +1,5 @@
 import { api } from '@renderer/api'
+import { useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { useThemeStore } from '@renderer/stores/themeStore'
 import { useVaultStore } from '@renderer/stores/vaultStore'
 import type { ThemeMode } from '@shared/types'
@@ -17,6 +18,11 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const pickAndSetVault = useVaultStore((s) => s.pickAndSetVault)
   const theme = useThemeStore((s) => s.theme)
   const setTheme = useThemeStore((s) => s.setTheme)
+  const hasPassword = useEncryptionStore((s) => s.hasPassword)
+  const unlocked = useEncryptionStore((s) => s.unlocked)
+  const beginSetPassword = useEncryptionStore((s) => s.beginSetPassword)
+  const beginUnlock = useEncryptionStore((s) => s.beginUnlock)
+  const lockVaultNow = useEncryptionStore((s) => s.lockVaultNow)
   const [rebuilding, setRebuilding] = useState(false)
   const [rebuildStatus, setRebuildStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
@@ -83,6 +89,51 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               Change
             </button>
           </div>
+        </section>
+
+        {/* Vault Password (Epic 10) */}
+        <section>
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
+            Vault Password
+          </h3>
+          {!hasPassword ? (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 light:text-slate-400">
+                Set a password to lock individual notes. It encrypts locked notes and is never
+                stored — there is no recovery if you forget it.
+              </p>
+              <button
+                type="button"
+                onClick={beginSetPassword}
+                className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
+              >
+                Set vault password
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-xs text-slate-400 light:text-slate-500">
+                {unlocked ? 'Vault unlocked this session' : 'Vault locked'}
+              </span>
+              {unlocked ? (
+                <button
+                  type="button"
+                  onClick={lockVaultNow}
+                  className="shrink-0 rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
+                >
+                  Lock vault now
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={beginUnlock}
+                  className="shrink-0 rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
+                >
+                  Unlock vault
+                </button>
+              )}
+            </div>
+          )}
         </section>
 
         {/* Shortcuts */}

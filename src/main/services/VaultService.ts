@@ -1,9 +1,13 @@
 import { randomBytes } from 'node:crypto'
 import { mkdir, open, readdir, readFile, rename, rm, stat, unlink } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
+import { isEncryptedPath } from './EncryptionService'
 
 /** Extensions Slate treats as notes. User-decided at bootstrap. */
 const NOTE_EXTENSIONS = ['.md', '.markdown', '.txt']
+
+/** The suffix a locked note carries on top of its note extension (Epic 10). */
+const ENC_SUFFIX = '.enc'
 
 function stripFormatting(text: string): string {
   return text
@@ -72,6 +76,17 @@ export class VaultService {
     const files = await this.collectNoteFiles()
     const items = await Promise.all(
       files.map(async (f) => {
+        // Locked notes: never read/parse ciphertext. Title comes from the
+        // filename; the snippet is a locked marker. mtime still comes from stat.
+        if (isEncryptedPath(f.rel)) {
+          const s = await stat(f.abs)
+          return {
+            path: f.rel,
+            title: lockedNoteTitle(f.rel),
+            snippet: '🔒 Locked',
+            mtime: Math.floor(s.mtimeMs),
+          }
+        }
         const [content, s] = await Promise.all([readFile(f.abs, 'utf-8'), stat(f.abs)])
         const lines = content.split('\n')
         const titleLine = lines.find((l) => l.trim().length > 0) ?? ''
@@ -125,6 +140,33 @@ export class VaultService {
   }
 
   /**
+   * Reads a note's raw bytes (for encrypted-note containers). Path is vault-safe.
+   */
+  async readBytes(relPath: string): Promise<Buffer> {
+    const abs = this.resolveSafe(relPath)
+    return readFile(abs)
+  }
+
+  /**
+   * Atomically writes raw bytes to a note (write-temp-fsync-rename), mirroring
+   * {@link writeNote} but for binary content like an encrypted container.
+   */
+  async writeBytes(relPath: string, data: Buffer): Promise<void> {
+    const abs = this.resolveSafe(relPath)
+    await mkdir(dirname(abs), { recursive: true })
+
+    const tmp = `${abs}.tmp-${randomBytes(6).toString('hex')}`
+    const handle = await open(tmp, 'w')
+    try {
+      await handle.writeFile(data)
+      await handle.sync()
+    } finally {
+      await handle.close()
+    }
+    await rename(tmp, abs)
+  }
+
+  /**
    * Recursively collects note files as `{ rel, abs }`, applying the listing's
    * exclusion rules (segments starting with `_`/`.`, non-note extensions) and
    * the case-insensitive sort. Shared by {@link listNotes} and
@@ -146,7 +188,7 @@ export class VaultService {
       const segments = rel.split(sep)
 
       if (segments.some((s) => s.startsWith('_') || s.startsWith('.'))) continue
-      if (!hasNoteExtension(entry.name)) continue
+      if (!isNoteFile(entry.name)) continue
 
       files.push({ rel: segments.join('/'), abs })
     }
@@ -205,7 +247,9 @@ export class VaultService {
   async renameNote(fromRel: string, toRel: string): Promise<void> {
     const fromAbs = this.resolveSafe(fromRel)
     const toAbs = this.resolveSafe(toRel)
-    if (!hasNoteExtension(toRel)) throw new Error('invalid-extension')
+    // Accept locked notes (`.md.enc`) too, so a locked note can be moved/renamed
+    // without the guard rejecting its `.enc` suffix.
+    if (!isNoteFile(toRel)) throw new Error('invalid-extension')
 
     // No-overwrite guard: reject if something already lives at the target.
     try {
@@ -284,4 +328,22 @@ export class VaultService {
 function hasNoteExtension(name: string): boolean {
   const lower = name.toLowerCase()
   return NOTE_EXTENSIONS.some((ext) => lower.endsWith(ext))
+}
+
+/** A locked note's filename: a note extension followed by `.enc` (e.g. `a.md.enc`). */
+function isLockedNoteName(name: string): boolean {
+  return (
+    name.toLowerCase().endsWith(ENC_SUFFIX) && hasNoteExtension(name.slice(0, -ENC_SUFFIX.length))
+  )
+}
+
+/** Whether the file is listable as a note: a plaintext note or a locked note. */
+function isNoteFile(name: string): boolean {
+  return hasNoteExtension(name) || isLockedNoteName(name)
+}
+
+/** A locked note's display title: strip `.enc` and the note extension. `a/b.md.enc` -> `b`. */
+function lockedNoteTitle(relPath: string): string {
+  const base = relPath.split('/').pop() ?? relPath
+  return base.slice(0, -ENC_SUFFIX.length).replace(/\.\w+$/, '')
 }

@@ -1,7 +1,8 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { EncryptionService } from './EncryptionService'
 import { SettingsService } from './SettingsService'
 
 let dir: string
@@ -82,5 +83,29 @@ describe('SettingsService', () => {
     const settings = new SettingsService(filePath)
     expect(await settings.getVaultPath()).toBe('C:/v')
     expect(await settings.getWorkspace()).toEqual({ openTabs: [], activeTab: null })
+  })
+
+  describe('encryption material (Epic 10)', () => {
+    it('returns null when no vault password has been set', async () => {
+      expect(await new SettingsService(filePath).getEncryption()).toBeNull()
+    })
+
+    it('persists and reads back salt + verifier across instances', async () => {
+      const secret = { salt: 'c2FsdA==', verifier: 'dmVyaWZpZXI=' }
+      await new SettingsService(filePath).setEncryption(secret)
+      expect(await new SettingsService(filePath).getEncryption()).toEqual(secret)
+    })
+
+    it('never writes the password to disk — only salt + verifier land in the file', async () => {
+      // Mirror the handler flow: derive the secret from a password, store it.
+      const password = 'super-secret-vault-pw-42'
+      const secret = new EncryptionService().initPassword(password)
+      await new SettingsService(filePath).setEncryption(secret)
+
+      const raw = await readFile(filePath, 'utf-8')
+      expect(raw).not.toContain(password)
+      expect(raw).toContain(secret.salt)
+      expect(raw).toContain(secret.verifier)
+    })
   })
 })

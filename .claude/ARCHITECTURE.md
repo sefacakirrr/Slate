@@ -59,6 +59,14 @@ Slate is a process-separated, service-oriented Electron application. The **main 
 - **Depends on**: `VaultService`, Node `crypto` (for hashing)
 - **Exposes**: `storeBlob(buffer, ext)`, `getPath(hash)`
 
+#### EncryptionService *(planned — optional per-note locking, Epic 10)*
+- **Responsibility**: All crypto for locked notes. Derives the session key from the vault password (`scrypt`, per-note salt) and seals/opens content with `AES-256-GCM` (per-note nonce, auth tag). Owns the in-memory session password/key state (set on unlock, cleared on lock/quit) and the on-disk encrypted-note format (versioned header: magic + version + salt + nonce + ciphertext + tag). Never persists the password or key; never crosses the IPC boundary with key material.
+- **Depends on**: Node `crypto` (`scryptSync`, `createCipheriv`/`createDecipheriv`) — no new dependency.
+- **Exposes** *(shape, to be finalized in the epic)*: `unlock(password)`, `lock()`, `isUnlocked()`, `encrypt(plaintext)`, `decrypt(container)`, `isLocked(relPath)`.
+- **Impact on existing services**:
+  - `VaultService` — a locked note is not a plain `.md`; listing must surface it (with a locked marker) while title/snippet come from the filename, not the encrypted body. Read/write of a locked note routes through `EncryptionService`.
+  - `IndexService` — **hard requirement**: locked notes are removed from the FTS index and skipped while locked, or the plaintext search index leaks their content. This is a security boundary, not an optimization.
+
 #### WindowManager
 - **Responsibility**: Main editor window and quick-capture popup window lifecycle. BrowserWindow creation, focus management, dev-tools wiring.
 - **Depends on**: Electron `BrowserWindow`, `app`

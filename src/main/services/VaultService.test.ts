@@ -229,3 +229,34 @@ describe('renameNote', () => {
     expect(await vault.readNote('sub/a.md')).toBe('alpha')
   })
 })
+
+describe('locked notes (.md.enc)', () => {
+  it('lists a locked note alongside plaintext notes', async () => {
+    await writeFile(join(root, 'a.md'), 'alpha')
+    await writeFile(join(root, 'secret.md.enc'), Buffer.from([1, 2, 3, 4]))
+    expect(await vault.listNotes()).toEqual(['a.md', 'secret.md.enc'])
+  })
+
+  it('does NOT list a bare .enc without a note extension', async () => {
+    await writeFile(join(root, 'blob.enc'), Buffer.from([9, 9]))
+    expect(await vault.listNotes()).toEqual([])
+  })
+
+  it('derives a locked note title from its filename and a locked snippet — never reads ciphertext', async () => {
+    // Non-utf8 bytes: if listNotesDetailed tried to parse these as text for a
+    // title/snippet, the result would be garbage. It must not read them.
+    await mkdir(join(root, 'sub'), { recursive: true })
+    await writeFile(join(root, 'sub', 'diary.md.enc'), Buffer.from([0xff, 0xfe, 0x00, 0x01]))
+    const detailed = await vault.listNotesDetailed()
+    const locked = detailed.find((d) => d.path === 'sub/diary.md.enc')
+    expect(locked).toBeDefined()
+    expect(locked?.title).toBe('diary')
+    expect(locked?.snippet).toBe('🔒 Locked')
+  })
+
+  it('round-trips raw bytes through writeBytes/readBytes atomically', async () => {
+    const data = Buffer.from([0x00, 0x10, 0xff, 0x42, 0x7f])
+    await vault.writeBytes('note.md.enc', data)
+    expect(await vault.readBytes('note.md.enc')).toEqual(data)
+  })
+})

@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { ThemeMode } from '@shared/types'
+import type { VaultSecret } from './EncryptionService'
 
 /**
  * On-disk settings shape. Kept deliberately small — add fields as features need
@@ -18,12 +19,20 @@ type SettingsData = {
   /** Open tabs + active tab, restored on next launch. */
   workspace: WorkspaceData
   theme: ThemeMode
+  /**
+   * Vault-encryption material (Epic 10). Non-secret: the salt to derive the key
+   * and a verifier to validate the password. `null` until the user sets a vault
+   * password. The password/key itself is NEVER stored here — only in
+   * EncryptionService memory for the session.
+   */
+  encryption: VaultSecret | null
 }
 
 const DEFAULTS: SettingsData = {
   vaultPath: null,
   workspace: { openTabs: [], activeTab: null },
   theme: 'dark',
+  encryption: null,
 }
 
 /**
@@ -104,5 +113,17 @@ export class SettingsService {
   async setTheme(theme: ThemeMode): Promise<void> {
     const data = await this.load()
     await this.persist({ ...data, theme })
+  }
+
+  /** The stored vault-encryption material, or null if no password is set. */
+  async getEncryption(): Promise<VaultSecret | null> {
+    const data = await this.load()
+    return data.encryption ?? null
+  }
+
+  /** Persists the (non-secret) salt + verifier. Never receives the password. */
+  async setEncryption(encryption: VaultSecret): Promise<void> {
+    const data = await this.load()
+    await this.persist({ ...data, encryption })
   }
 }

@@ -1,6 +1,8 @@
 import { api } from '@renderer/api'
+import { isLockedPath, useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import type { NoteListItem } from '@shared/types'
+import { Lock } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 function formatDate(mtime: number): string {
@@ -21,6 +23,7 @@ export function NotesList() {
   const [notes, setNotes] = useState<NoteListItem[]>([])
   const activeTabPath = useWorkspaceStore((s) => s.activeTabPath)
   const openTab = useWorkspaceStore((s) => s.openTab)
+  const openLocked = useEncryptionStore((s) => s.openLocked)
 
   const load = useCallback(async () => {
     const result = await api.vault.listDetailed()
@@ -45,11 +48,12 @@ export function NotesList() {
     <div className="flex flex-col overflow-y-auto">
       {notes.map((note) => {
         const selected = activeTabPath === note.path
+        const locked = isLockedPath(note.path)
         return (
           <button
             key={note.path}
             type="button"
-            onClick={() => openTab(note.path)}
+            onClick={() => (locked ? openLocked(note.path) : openTab(note.path))}
             className={`flex flex-col gap-0.5 border-b px-3 py-2.5 text-left transition ${
               selected
                 ? 'border-slate-700 bg-accent-500/10 dark:border-slate-700 light:border-slate-200 light:bg-accent-500/5'
@@ -57,13 +61,19 @@ export function NotesList() {
             }`}
           >
             <span
-              className={`truncate text-sm font-medium ${
+              className={`flex items-center gap-1.5 truncate text-sm font-medium ${
                 selected
                   ? 'text-slate-50 light:text-slate-900'
                   : 'text-slate-200 light:text-slate-800'
               }`}
             >
-              {note.title}
+              {locked && (
+                <Lock
+                  className="size-3 shrink-0 text-amber-500/80 light:text-amber-600"
+                  aria-label="Locked"
+                />
+              )}
+              <span className="truncate">{note.title}</span>
             </span>
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-slate-500 light:text-slate-400">
