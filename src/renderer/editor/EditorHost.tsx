@@ -77,6 +77,33 @@ export function EditorHost() {
     }
   }, [openPaths])
 
+  // Near-live sync (Epic 11 Phase 03): when a note is saved by another window,
+  // reload its content into the open tab — the live view if it's active, else the
+  // cached state. `reloadTab` returns null when the tab is dirty or unchanged.
+  useEffect(() => {
+    return window.api.window.onNoteChanged((path) => {
+      void useWorkspaceStore
+        .getState()
+        .reloadTab(path)
+        .then((content) => {
+          if (content === null) return
+          const view = viewRef.current
+          if (path === useWorkspaceStore.getState().activeTabPath && view !== null) {
+            view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: content } })
+          } else {
+            const cached = statesRef.current.get(path)
+            if (cached !== undefined) {
+              statesRef.current.set(
+                path,
+                cached.update({ changes: { from: 0, to: cached.doc.length, insert: content } })
+                  .state,
+              )
+            }
+          }
+        })
+    })
+  }, [])
+
   return (
     <div className="relative h-full overflow-hidden">
       <div ref={hostRef} className="h-full" />

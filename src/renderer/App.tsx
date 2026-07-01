@@ -4,7 +4,10 @@ import { EmptyState } from '@renderer/components/EmptyState'
 import { QuickCapture } from '@renderer/components/QuickCapture'
 import { SearchPanel } from '@renderer/components/SearchPanel'
 import { Sidebar } from '@renderer/components/Sidebar'
+import { StickyNote } from '@renderer/components/StickyNote'
 import { TitleBar } from '@renderer/components/TitleBar'
+import { UnlockDialog } from '@renderer/components/UnlockDialog'
+import { useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { useSearchStore } from '@renderer/stores/searchStore'
 import { useThemeStore } from '@renderer/stores/themeStore'
 import { useVaultStore } from '@renderer/stores/vaultStore'
@@ -14,8 +17,13 @@ import { useHotkeys } from 'react-hotkeys-hook'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 
 export default function App() {
-  if (window.location.hash === '#/capture') {
+  const hash = window.location.hash
+  if (hash === '#/capture') {
     return <QuickCapture />
+  }
+  if (hash.startsWith('#/sticky/')) {
+    const notePath = decodeURIComponent(hash.slice('#/sticky/'.length))
+    return <StickyNote notePath={notePath} />
   }
   return <MainApp />
 }
@@ -33,12 +41,14 @@ function MainApp() {
   const cancelClose = useWorkspaceStore((s) => s.cancelClose)
   const toggleSearch = useSearchStore((s) => s.togglePanel)
   const loadTheme = useThemeStore((s) => s.loadTheme)
+  const initEncryption = useEncryptionStore((s) => s.init)
   const [pendingQuit, setPendingQuit] = useState(false)
 
   useEffect(() => {
     loadVaultPath()
     loadTheme()
-  }, [loadVaultPath, loadTheme])
+    initEncryption()
+  }, [loadVaultPath, loadTheme, initEncryption])
 
   useEffect(() => {
     return window.api.window.onConfirmClose(() => {
@@ -125,6 +135,8 @@ function MainApp() {
         }}
         onCancel={() => setPendingQuit(false)}
       />
+
+      <UnlockDialog />
     </div>
   )
 

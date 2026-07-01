@@ -7,7 +7,7 @@
  * boundary, so renderer code always destructures `result.ok` to narrow safely.
  */
 
-import type { NoteListItem, SearchResult, TagInfo, ThemeMode } from './types'
+import type { NoteListItem, SearchResult, TagInfo, ThemeMode, UpdateState } from './types'
 
 /** Discriminated union returned from every IPC handler. */
 export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -41,6 +41,22 @@ export type IpcCommands = {
   'vault:createFolder': { request: string; response: undefined }
   'vault:renameNote': { request: { from: string; to: string }; response: undefined }
   'vault:renameFolder': { request: { from: string; to: string }; response: undefined }
+  /** Whether a vault password has been set (Epic 10). */
+  'vault:hasPassword': { request: undefined; response: boolean }
+  /** First-time vault password setup. Rejects if one already exists. */
+  'vault:setPassword': { request: { password: string }; response: undefined }
+  /** Unlock the vault for this session. Resolves true on success, false on a wrong password. */
+  'vault:unlock': { request: { password: string }; response: boolean }
+  /** Clear the session key — the vault re-locks immediately. */
+  'vault:lockVault': { request: undefined; response: undefined }
+  /** Whether the vault is currently unlocked (a session key is held). */
+  'vault:isVaultUnlocked': { request: undefined; response: boolean }
+  /** Whether a given path is a locked (encrypted) note. */
+  'vault:isLocked': { request: string; response: boolean }
+  /** Encrypt a plaintext note in place → `<path>.enc`. Requires an unlocked vault. Returns the new path. */
+  'vault:lockNote': { request: string; response: { path: string } }
+  /** Decrypt a locked note back to plaintext, removing `.enc`. Requires an unlocked vault. Returns the new path. */
+  'vault:unlockNote': { request: string; response: { path: string } }
   /** Full-text search over the FTS index; ranked best-first, capped server-side. */
   'search:query': { request: string; response: SearchResult[] }
   /** Drops and rebuilds the whole index from disk (the manual escape hatch). */
@@ -69,12 +85,22 @@ export type IpcCommands = {
     request: undefined
     response: undefined
   }
+  /** Open (or focus) a sticky-note window for a note path (Epic 11). */
+  'window:sticky:open': { request: string; response: undefined }
+  /** Close a sticky-note window by note path (unpins it). */
+  'window:sticky:close': { request: string; response: undefined }
   'window:minimize': { request: undefined; response: undefined }
   /** Toggles maximize/restore; resolves to the resulting maximized state. */
   'window:toggleMaximize': { request: undefined; response: boolean }
   'window:close': { request: undefined; response: undefined }
   'window:forceClose': { request: undefined; response: undefined }
   'window:isMaximized': { request: undefined; response: boolean }
+  /** Trigger an update check (Epic 12); outcomes arrive via the `update:state` event. */
+  'update:check': { request: undefined; response: undefined }
+  /** Windows: install the downloaded update and relaunch. */
+  'update:install': { request: undefined; response: undefined }
+  /** macOS: open the GitHub Releases page (optionally a specific URL). */
+  'update:openReleases': { request: string | undefined; response: undefined }
 }
 
 export type IpcChannel = keyof IpcCommands
@@ -114,6 +140,14 @@ export type Api = {
     createFolder: (path: string) => Promise<IpcResult<undefined>>
     renameNote: (req: { from: string; to: string }) => Promise<IpcResult<undefined>>
     renameFolder: (req: { from: string; to: string }) => Promise<IpcResult<undefined>>
+    hasPassword: () => Promise<IpcResult<boolean>>
+    setPassword: (req: { password: string }) => Promise<IpcResult<undefined>>
+    unlock: (req: { password: string }) => Promise<IpcResult<boolean>>
+    lockVault: () => Promise<IpcResult<undefined>>
+    isVaultUnlocked: () => Promise<IpcResult<boolean>>
+    isLocked: (path: string) => Promise<IpcResult<boolean>>
+    lockNote: (path: string) => Promise<IpcResult<{ path: string }>>
+    unlockNote: (path: string) => Promise<IpcResult<{ path: string }>>
   }
   search: {
     query: (query: string) => Promise<IpcResult<SearchResult[]>>
@@ -146,6 +180,21 @@ export type Api = {
      */
     onMaximizeChange: (cb: (isMaximized: boolean) => void) => () => void
     onFilesChanged: (cb: () => void) => () => void
+    /** One note's content changed on disk (Epic 11); payload is the note path. */
+    onNoteChanged: (cb: (path: string) => void) => () => void
     onConfirmClose: (cb: () => void) => () => void
+    /** Sticky-note windows (Epic 11). */
+    sticky: {
+      open: (path: string) => Promise<IpcResult<undefined>>
+      close: (path: string) => Promise<IpcResult<undefined>>
+    }
+  }
+  /** In-app updates (Epic 12). */
+  update: {
+    check: () => Promise<IpcResult<undefined>>
+    install: () => Promise<IpcResult<undefined>>
+    openReleases: (url?: string) => Promise<IpcResult<undefined>>
+    /** Subscribe to update-state transitions. Returns an unsubscribe function. */
+    onState: (cb: (state: UpdateState) => void) => () => void
   }
 }

@@ -2,10 +2,12 @@ import { resolve } from 'node:path'
 import type { IpcChannel, IpcRequest, IpcResponse, IpcResult } from '@shared/ipc'
 import { type BrowserWindow, dialog, type IpcMain, type IpcMainInvokeEvent, shell } from 'electron'
 import type { AttachmentService } from '../services/AttachmentService'
+import type { EncryptionService } from '../services/EncryptionService'
 import type { IndexService } from '../services/IndexService'
 import { reconcileIndex } from '../services/reconcile'
 import type { SearchService } from '../services/SearchService'
 import type { SettingsService } from '../services/SettingsService'
+import type { UpdateService } from '../services/UpdateService'
 import { VaultService } from '../services/VaultService'
 import type { WindowManager } from '../windows/WindowManager'
 
@@ -25,6 +27,8 @@ type Deps = {
   index: IndexService
   search: SearchService
   attachment: AttachmentService
+  encryption: EncryptionService
+  update: UpdateService
   windowManager: WindowManager
   /** The window the native dialogs should attach to, if any. */
   getMainWindow: () => BrowserWindow | null
@@ -85,15 +89,35 @@ function buildHandlers(deps: Deps): HandlerMap {
     'vault:listNotes': async () => (await vault()).listNotes(),
     'vault:listDirs': async () => (await vault()).listDirs(),
     'vault:listDetailed': async () => (await vault()).listNotesDetailed(),
-    'vault:readNote': async (path) => (await vault()).readNote(path),
+    'vault:readNote': async (path) => {
+      const v = await vault()
+      // A locked note requires an unlocked vault; return decrypted plaintext.
+      if (deps.encryption.isLocked(path)) {
+        if (!deps.encryption.isUnlocked()) throw new Error('note-locked')
+        return deps.encryption.openForSession(await v.readBytes(path))
+      }
+      return v.readNote(path)
+    },
     'vault:writeNote': async (req) => {
       const v = await vault()
+      // A locked note is encrypted before hitting disk and never indexed (its
+      // plaintext must not enter the FTS index).
+      if (deps.encryption.isLocked(req.path)) {
+        if (!deps.encryption.isUnlocked()) throw new Error('note-locked')
+        await v.writeBytes(req.path, deps.encryption.sealForSession(req.content))
+        deps.windowManager.broadcastFilesChanged()
+        deps.windowManager.broadcastNoteChanged(req.path)
+        return undefined
+      }
       await v.writeNote(req.path, req.content)
       try {
         deps.index.indexNote(req.path, req.content, await v.statMtime(req.path))
       } catch (err) {
         console.error('index writeNote failed:', err)
       }
+      deps.windowManager.broadcastFilesChanged()
+      // Content changed → let other windows showing this note reload (if not dirty).
+      deps.windowManager.broadcastNoteChanged(req.path)
       return undefined
     },
     'vault:createNote': async (path) => {
@@ -104,11 +128,13 @@ function buildHandlers(deps: Deps): HandlerMap {
       } catch (err) {
         console.error('index createNote failed:', err)
       }
+      deps.windowManager.broadcastFilesChanged()
       return undefined
     },
     'vault:deleteNote': async (path) => {
       await (await vault()).deleteNote(path)
       tryIndex('deleteNote', () => deps.index.removeNote(path))
+      deps.windowManager.broadcastFilesChanged()
       return undefined
     },
     'vault:deleteFolder': async (path) => {
@@ -120,6 +146,7 @@ function buildHandlers(deps: Deps): HandlerMap {
       for (const p of toRemove) {
         tryIndex('deleteFolder/removeNote', () => deps.index.removeNote(p))
       }
+      deps.windowManager.broadcastFilesChanged()
       return undefined
     },
     'vault:createFolder': async (path) => {
@@ -129,6 +156,7 @@ function buildHandlers(deps: Deps): HandlerMap {
     'vault:renameNote': async (req) => {
       await (await vault()).renameNote(req.from, req.to)
       tryIndex('renameNote', () => deps.index.renameNote(req.from, req.to))
+      deps.windowManager.broadcastFilesChanged()
       return undefined
     },
     'vault:renameFolder': async (req) => {
@@ -142,7 +170,73 @@ function buildHandlers(deps: Deps): HandlerMap {
         const newPath = toPrefix + p.slice(fromPrefix.length)
         tryIndex('renameFolder/renameNote', () => deps.index.renameNote(p, newPath))
       }
+      deps.windowManager.broadcastFilesChanged()
       return undefined
+    },
+    'vault:hasPassword': async () => (await deps.settings.getEncryption()) !== null,
+    'vault:setPassword': async (req) => {
+      // First-time only in v1 — changing the password (re-encrypt all) is out of scope.
+      if ((await deps.settings.getEncryption()) !== null) throw new Error('password-exists')
+      const secret = deps.encryption.initPassword(req.password)
+      try {
+        await deps.settings.setEncryption(secret)
+      } catch (err) {
+        // Persist failed: roll back the in-memory key so we never end up unlocked
+        // with a salt that was never saved — locking a note in that state would
+        // make it permanently unopenable (the salt to re-derive the key is gone).
+        deps.encryption.lockVault()
+        throw err
+      }
+      return undefined
+    },
+    'vault:unlock': async (req) => {
+      const secret = await deps.settings.getEncryption()
+      if (secret === null) throw new Error('no-password')
+      // Returns false (not throws) on a wrong password so the renderer can retry.
+      return deps.encryption.unlock(req.password, secret)
+    },
+    'vault:lockVault': () => {
+      deps.encryption.lockVault()
+      return undefined
+    },
+    'vault:isVaultUnlocked': () => deps.encryption.isUnlocked(),
+    'vault:isLocked': (path) => deps.encryption.isLocked(path),
+    'vault:lockNote': async (path) => {
+      if (deps.encryption.isLocked(path)) throw new Error('already-locked')
+      if (!deps.encryption.isUnlocked()) throw new Error('vault-locked')
+      const v = await vault()
+      const plaintext = await v.readNote(path)
+      const encPath = `${path}.enc`
+      // encrypt → write → verify it re-opens → only then delete the plaintext,
+      // so we never destroy the original before a good ciphertext exists.
+      await v.writeBytes(encPath, deps.encryption.sealForSession(plaintext))
+      if (deps.encryption.openForSession(await v.readBytes(encPath)) !== plaintext) {
+        throw new Error('lock-verify-failed')
+      }
+      await v.deleteNote(path)
+      // Remove the now-encrypted note from the search index (security boundary).
+      tryIndex('lockNote', () => deps.index.removeNote(path))
+      // The note's path changed to `.enc` — refresh every window (a sticky on the
+      // old path will re-check and close itself, since locked notes can't be stickies).
+      deps.windowManager.broadcastFilesChanged()
+      return { path: encPath }
+    },
+    'vault:unlockNote': async (path) => {
+      if (!deps.encryption.isLocked(path)) throw new Error('not-locked')
+      if (!deps.encryption.isUnlocked()) throw new Error('vault-locked')
+      const v = await vault()
+      const plaintext = deps.encryption.openForSession(await v.readBytes(path))
+      const plainPath = path.slice(0, -'.enc'.length)
+      await v.writeNote(plainPath, plaintext)
+      await v.deleteNote(path)
+      // Back in plaintext → re-index so it's searchable again.
+      try {
+        deps.index.indexNote(plainPath, plaintext, await v.statMtime(plainPath))
+      } catch (err) {
+        console.error('index unlockNote failed:', err)
+      }
+      deps.windowManager.broadcastFilesChanged()
+      return { path: plainPath }
     },
     'search:query': (query) => deps.search.search(query),
     'tags:list': () => deps.index.listTags(),
@@ -172,11 +266,8 @@ function buildHandlers(deps: Deps): HandlerMap {
         console.error('index capture:save failed:', err)
       }
       deps.windowManager.closeQuickCapture()
-      // Notify main window to refresh file list
-      const mainWin = deps.getMainWindow()
-      if (mainWin && !mainWin.isDestroyed()) {
-        mainWin.webContents.send('vault:filesChanged')
-      }
+      // Refresh every window's file list (main + any stickies).
+      deps.windowManager.broadcastFilesChanged()
       return { path: filename }
     },
     'capture:close': () => {
@@ -185,7 +276,11 @@ function buildHandlers(deps: Deps): HandlerMap {
     },
     'index:rebuild': async () => {
       const v = await vault()
-      const files = await v.listNotesWithMtime()
+      // Exclude locked notes: their content is encrypted and must never enter the
+      // FTS index. `listNotesWithMtime` includes `.md.enc` files, so filter them
+      // out before reading — otherwise a manual rebuild would index ciphertext
+      // and re-open the search-leak boundary that lock/reconcile close.
+      const files = (await v.listNotesWithMtime()).filter((f) => !deps.encryption.isLocked(f.path))
       const entries = await Promise.all(
         files.map(async (f) => ({
           path: f.path,
@@ -194,6 +289,29 @@ function buildHandlers(deps: Deps): HandlerMap {
         })),
       )
       deps.index.rebuild(entries)
+      return undefined
+    },
+    'window:sticky:open': (path) => {
+      // Locked notes are excluded from stickies in v1 (a floating window can't sit
+      // behind a password prompt). Defense in depth — the UI also hides the action.
+      if (deps.encryption.isLocked(path)) throw new Error('cannot-pin-locked')
+      deps.windowManager.openSticky(path)
+      return undefined
+    },
+    'window:sticky:close': (path) => {
+      deps.windowManager.closeSticky(path)
+      return undefined
+    },
+    'update:check': () => {
+      deps.update.check()
+      return undefined
+    },
+    'update:install': () => {
+      deps.update.install()
+      return undefined
+    },
+    'update:openReleases': async (url) => {
+      await deps.update.openReleases(url)
       return undefined
     },
     'window:minimize': () => {
@@ -264,6 +382,14 @@ export function registerIpcHandlers(ipc: IpcMain, deps: Deps): void {
   register(ipc, 'vault:createFolder', handlers['vault:createFolder'])
   register(ipc, 'vault:renameNote', handlers['vault:renameNote'])
   register(ipc, 'vault:renameFolder', handlers['vault:renameFolder'])
+  register(ipc, 'vault:hasPassword', handlers['vault:hasPassword'])
+  register(ipc, 'vault:setPassword', handlers['vault:setPassword'])
+  register(ipc, 'vault:unlock', handlers['vault:unlock'])
+  register(ipc, 'vault:lockVault', handlers['vault:lockVault'])
+  register(ipc, 'vault:isVaultUnlocked', handlers['vault:isVaultUnlocked'])
+  register(ipc, 'vault:isLocked', handlers['vault:isLocked'])
+  register(ipc, 'vault:lockNote', handlers['vault:lockNote'])
+  register(ipc, 'vault:unlockNote', handlers['vault:unlockNote'])
   register(ipc, 'search:query', handlers['search:query'])
   register(ipc, 'tags:list', handlers['tags:list'])
   register(ipc, 'tags:notesForTag', handlers['tags:notesForTag'])
@@ -272,6 +398,11 @@ export function registerIpcHandlers(ipc: IpcMain, deps: Deps): void {
   register(ipc, 'capture:save', handlers['capture:save'])
   register(ipc, 'capture:close', handlers['capture:close'])
   register(ipc, 'index:rebuild', handlers['index:rebuild'])
+  register(ipc, 'window:sticky:open', handlers['window:sticky:open'])
+  register(ipc, 'window:sticky:close', handlers['window:sticky:close'])
+  register(ipc, 'update:check', handlers['update:check'])
+  register(ipc, 'update:install', handlers['update:install'])
+  register(ipc, 'update:openReleases', handlers['update:openReleases'])
   register(ipc, 'window:minimize', handlers['window:minimize'])
   register(ipc, 'window:toggleMaximize', handlers['window:toggleMaximize'])
   register(ipc, 'window:close', handlers['window:close'])

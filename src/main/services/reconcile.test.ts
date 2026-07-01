@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -113,5 +113,31 @@ describe('reconcileIndex', () => {
 
     expect(index.notesForTag('old-tag')).toEqual([])
     expect(index.notesForTag('new-tag')).toEqual(['note.md'])
+  })
+
+  // Security boundary: a locked note's plaintext must never reach the FTS index.
+  it('never indexes a locked (.md.enc) note — its terms are unsearchable', async () => {
+    // A .md.enc whose *bytes* happen to contain a word: even so it must not be
+    // indexed. (Real containers are ciphertext; this makes the assertion sharp.)
+    await mkdir(vaultRoot, { recursive: true })
+    await writeFile(join(vaultRoot, 'diary.md.enc'), 'topsecretword plaintext-lookalike')
+    await reconcileIndex(vault, index)
+
+    expect(found('topsecretword')).toEqual([])
+    expect(index.getIndexed().map((n) => n.path)).not.toContain('diary.md.enc')
+  })
+
+  it('drops the index row when a note becomes locked (foo.md -> foo.md.enc on disk)', async () => {
+    await vault.writeNote('foo.md', 'searchable secret')
+    await reconcileIndex(vault, index)
+    expect(found('secret')).toEqual(['foo.md'])
+
+    // Simulate locking done outside this reconcile: plaintext replaced by .enc.
+    await vault.deleteNote('foo.md')
+    await writeFile(join(vaultRoot, 'foo.md.enc'), Buffer.from([1, 2, 3]))
+    await reconcileIndex(vault, index)
+
+    expect(found('secret')).toEqual([])
+    expect(index.getIndexed().map((n) => n.path)).toEqual([])
   })
 })

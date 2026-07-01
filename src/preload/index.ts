@@ -37,6 +37,14 @@ const api: Api = {
     createFolder: (path) => invoke('vault:createFolder', path),
     renameNote: (req) => invoke('vault:renameNote', req),
     renameFolder: (req) => invoke('vault:renameFolder', req),
+    hasPassword: () => invoke('vault:hasPassword'),
+    setPassword: (req) => invoke('vault:setPassword', req),
+    unlock: (req) => invoke('vault:unlock', req),
+    lockVault: () => invoke('vault:lockVault'),
+    isVaultUnlocked: () => invoke('vault:isVaultUnlocked'),
+    isLocked: (path) => invoke('vault:isLocked', path),
+    lockNote: (path) => invoke('vault:lockNote', path),
+    unlockNote: (path) => invoke('vault:unlockNote', path),
   },
   search: {
     query: (query) => invoke('search:query', query),
@@ -76,11 +84,34 @@ const api: Api = {
         ipcRenderer.removeListener('vault:filesChanged', listener)
       }
     },
+    onNoteChanged: (cb) => {
+      const listener = (_event: unknown, path: string) => cb(path)
+      ipcRenderer.on('vault:noteChanged', listener)
+      return () => {
+        ipcRenderer.removeListener('vault:noteChanged', listener)
+      }
+    },
     onConfirmClose: (cb) => {
       const listener = () => cb()
       ipcRenderer.on('window:confirmClose', listener)
       return () => {
         ipcRenderer.removeListener('window:confirmClose', listener)
+      }
+    },
+    sticky: {
+      open: (path) => invoke('window:sticky:open', path),
+      close: (path) => invoke('window:sticky:close', path),
+    },
+  },
+  update: {
+    check: () => invoke('update:check'),
+    install: () => invoke('update:install'),
+    openReleases: (url) => invoke('update:openReleases', url),
+    onState: (cb) => {
+      const listener = (_event: unknown, state: Parameters<typeof cb>[0]) => cb(state)
+      ipcRenderer.on('update:state', listener)
+      return () => {
+        ipcRenderer.removeListener('update:state', listener)
       }
     },
   },

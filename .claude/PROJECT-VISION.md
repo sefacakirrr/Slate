@@ -39,13 +39,17 @@ A unified, frictionless, local-first notes app for both code and life — fast, 
 - Folders + inline `#hashtag` tags for cross-cutting organization
 - Tabbed editor (multiple notes open simultaneously)
 - Dark mode
+- Optional per-note at-rest encryption — the user can lock selected notes behind a single vault password. Locked notes are encrypted on disk (scrypt-derived key, AES-256-GCM) and unreadable without the password. Fully local; adds no cloud or sync. *(Added 2026-07-01 via /project-revise.)*
+- Optional desktop sticky notes — the user can pin selected notes as small, frameless, always-on-top windows that float above other apps (like the OS "sticky notes" concept). The vault `.md` file stays the source of truth; edits in a sticky save straight to the file. Which notes are stuck and their positions persist and restore on launch. Cross-platform via Electron's own window APIs — no native code. *(Added 2026-07-01 via /project-revise.)*
 
 ### What We're NOT Building
 
 - No mobile, no web, no browser version
-- No sync, no cloud
+- No sync, no cloud — including for encryption: keys and passwords never leave the machine, no keychain/cloud escrow, no key recovery service
+- No password recovery or backdoor for locked notes — forgetting the vault password means the encrypted content is permanently unrecoverable (deliberate zero-knowledge stance)
 - No collaboration, sharing, or multiplayer
-- No reminders or notifications
+- No reminders or notifications — sticky notes are passive always-on-top windows the user pins deliberately; they never alert, schedule, or notify
+- No desktop-embedded / wallpaper-level widgets (behind app windows, Rainmeter-style) — that needs fragile native Win32 (`WorkerW` reparenting) and unsupported macOS window-level hacks, which conflict with the cross-platform, low-dependency goal. Sticky notes float *above* apps, not embedded in the desktop
 - No plugin system
 - No AI integration
 - No browser webclipper / extension
@@ -56,7 +60,7 @@ A unified, frictionless, local-first notes app for both code and life — fast, 
 
 - **Daily use over 3+ months**, replacing Notion/Sublime for note-taking.
 - **Quick-capture under 5 seconds** from any context — keystroke to note saved.
-- **Notes are portable markdown** that survive even if Slate is abandoned — readable by any other markdown editor.
+- **Notes are portable markdown** that survive even if Slate is abandoned — readable by any other markdown editor. *Exception: notes the user deliberately locks are encrypted at rest and readable only through Slate with the vault password. This is a conscious, opt-in trade-off — the default and the vast majority of notes stay plain, portable markdown.*
 - **Search returns results in under 2 seconds** across the entire library.
 
 ## Risks & Assumptions
@@ -64,6 +68,10 @@ A unified, frictionless, local-first notes app for both code and life — fast, 
 - **Assumption**: a markdown + WYSIWYG editing experience (Typora-style live preview) is achievable using existing editor frameworks rather than writing a custom rich-text engine.
 - **Risk**: scope creep from Tier-2 features (backlinks, templates, daily notes) being added pre-emptively before v1 is dogfooded and proven.
 - **Risk**: the name "Slate" overlaps with a popular JavaScript rich-text editor framework. Not a v1 blocker since the project is personal, but may cause confusion if it ever goes public.
+- **Risk (encryption)**: no password recovery means a forgotten vault password is unrecoverable data loss. Mitigation is UX-only — clear warnings at lock time, an unmistakable confirmation that there is no reset. Accepted deliberately for the zero-knowledge guarantee.
+- **Risk (encryption interop)**: a locked note is no longer a plain `.md` readable by other tools, and must be excluded from the plaintext search index or it leaks. Contained by keeping locking opt-in and per-note, and by treating index exclusion as a hard requirement of the feature.
+- **Risk (sticky multi-window consistency)**: the same note can be open in the main window and one or more stickies at once; concurrent edits could clobber each other or drift. Contained by keeping the vault file the single source of truth and reusing the existing file-change notification path so all windows reconcile — the dirty/save model already handles this for tabs.
+- **Risk (sticky platform behavior)**: always-on-top + show-on-all-workspaces behaves slightly differently per OS (Spaces/fullscreen on macOS, virtual desktops on Windows). Contained by using only Electron's documented window APIs and accepting minor per-OS cosmetic differences rather than native hacks.
 
 ## Open Questions
 

@@ -93,5 +93,7 @@ src/
 - **Main services don't import React/Zustand.** Pure TypeScript modules.
 - **Shared package contains types only**, no runtime code.
 - **Source of truth**: files on disk. SQLite is a derived, rebuildable index.
+- **Locked notes (E10, shipped v0.1.8)**: notes the user explicitly locks are encrypted at rest (scrypt + AES-256-GCM via Node `crypto`, single vault password held only in main-process memory). Locked notes are stored as `.md.enc` and **excluded from the FTS index** at the index layer — leaving one in the plaintext index leaks its contents. No password recovery by design.
+- **Sticky notes (planned, E11)**: a pinned note opens as a frameless always-on-top `BrowserWindow` (owned by `WindowManager`, same renderer bundle via a route hash, like quick-capture). The vault `.md` file stays the source of truth; stickies save via the normal `writeNote` path and reconcile through `vault:filesChanged`. Stuck set + geometry persist in `SettingsService`. No native code; floats above apps (not desktop-embedded).
 - **Functional-leaning TS.** Classes only for main-process services owning stateful resources (DB connection, watcher).
 - **Errors**: throw at service layer; catch at IPC boundary; deliver `IpcResult<T>` to renderer.

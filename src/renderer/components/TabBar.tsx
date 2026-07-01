@@ -1,6 +1,17 @@
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { X } from 'lucide-react'
 
+const NOTE_EXTENSIONS = ['.md', '.markdown', '.txt']
+
+/** Tab label: the leaf filename without its note extension (and `.enc` for locked notes). */
+function tabLabel(path: string): string {
+  let name = path.split('/').pop() ?? path
+  if (name.endsWith('.enc')) name = name.slice(0, -'.enc'.length)
+  const lower = name.toLowerCase()
+  const ext = NOTE_EXTENSIONS.find((e) => lower.endsWith(e))
+  return ext ? name.slice(0, -ext.length) : name
+}
+
 /** Horizontal strip of open-note tabs above the editor. */
 export function TabBar() {
   const tabs = useWorkspaceStore((s) => s.tabs)
@@ -13,7 +24,7 @@ export function TabBar() {
   return (
     <div className="flex min-w-0 items-stretch border-b border-slate-800 bg-slate-900 light:border-slate-200 light:bg-slate-50">
       {tabs.map((tab) => {
-        const name = tab.path.split('/').pop() ?? tab.path
+        const name = tabLabel(tab.path)
         const active = tab.path === activeTabPath
         return (
           <div

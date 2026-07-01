@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3'
+import { isEncryptedPath } from './EncryptionService'
 import { extractTags } from './extractTags'
 
 /** A single indexed note's identity + freshness, used by reconciliation. */
@@ -95,6 +96,10 @@ export class IndexService {
    * Also syncs the note's tag associations from its content.
    */
   indexNote(path: string, content: string, mtime: number): void {
+    // Security boundary: a locked note's content must never enter the index.
+    // Enforced here at the index layer so no caller can leak it by forgetting to
+    // filter (defense in depth on top of the lock/reconcile/rebuild guards).
+    if (isEncryptedPath(path)) return
     this.db
       .prepare(
         `INSERT INTO notes (path, mtime, content) VALUES (?, ?, ?)
@@ -124,6 +129,8 @@ export class IndexService {
    * Also rebuilds all tag associations from content.
    */
   rebuild(entries: NoteEntry[]): void {
+    // Never index locked notes, even if a caller hands them in (see indexNote).
+    const safe = entries.filter((e) => !isEncryptedPath(e.path))
     const insert = this.db.prepare('INSERT INTO notes (path, mtime, content) VALUES (?, ?, ?)')
     const replaceAll = this.db.transaction((rows: NoteEntry[]) => {
       this.db.exec('DELETE FROM notes')
@@ -131,8 +138,8 @@ export class IndexService {
       this.db.exec('DELETE FROM tags')
       for (const r of rows) insert.run(r.path, r.mtime, r.content)
     })
-    replaceAll(entries)
-    for (const r of entries) {
+    replaceAll(safe)
+    for (const r of safe) {
       this.syncTags(r.path, extractTags(r.content))
     }
   }

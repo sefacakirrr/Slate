@@ -41,6 +41,12 @@ describe('indexNote', () => {
     expect(paths('elephant')).toEqual([])
   })
 
+  it('refuses to index a locked (.md.enc) note — the security boundary at the index layer', () => {
+    index.indexNote('secret.md.enc', 'topsecretword should not be searchable', 1)
+    expect(paths('topsecretword')).toEqual([])
+    expect(index.getIndexed()).toEqual([])
+  })
+
   it('scopes a match to the note that contains the term', () => {
     index.indexNote('a.md', 'alpha beta', 1)
     index.indexNote('b.md', 'beta gamma', 1)
@@ -118,6 +124,16 @@ describe('rebuild', () => {
     index.rebuild([])
     expect(index.getIndexed()).toEqual([])
     expect(paths('something')).toEqual([])
+  })
+
+  it('excludes locked (.md.enc) entries even when handed in — never indexes ciphertext', () => {
+    index.rebuild([
+      { path: 'plain.md', content: 'visible text', mtime: 1 },
+      { path: 'locked.md.enc', content: 'ciphertextgarbage secretword', mtime: 2 },
+    ])
+    expect(paths('visible')).toEqual(['plain.md'])
+    expect(paths('secretword')).toEqual([])
+    expect(index.getIndexed()).toEqual([{ path: 'plain.md', mtime: 1 }])
   })
 })
 

@@ -2,6 +2,7 @@ import { api } from '@renderer/api'
 import { ConfirmDialog } from '@renderer/components/ConfirmDialog'
 import { NotesList } from '@renderer/components/NotesList'
 import { SettingsPanel } from '@renderer/components/SettingsPanel'
+import { isLockedPath, useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { useSearchStore } from '@renderer/stores/searchStore'
 import { useTagsStore } from '@renderer/stores/tagsStore'
 import { useVaultStore } from '@renderer/stores/vaultStore'
@@ -16,7 +17,10 @@ import {
   FolderPlus,
   Hash,
   List,
+  Lock,
+  LockOpen,
   Pencil,
+  Pin,
   RefreshCw,
   Settings,
   Trash2,
@@ -24,6 +28,33 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 let _dragItem: { path: string; type: 'file' | 'folder' } | null = null
+
+const NOTE_EXTENSIONS = ['.md', '.markdown', '.txt']
+
+/** The trailing note extension of a leaf name (e.g. '.md'), or '' if none. */
+function noteExt(name: string): string {
+  const lower = name.toLowerCase()
+  return NOTE_EXTENSIONS.find((ext) => lower.endsWith(ext)) ?? ''
+}
+
+/** Leaf name without its trailing note extension — for display and editing. */
+function stripNoteExt(name: string): string {
+  const ext = noteExt(name)
+  return ext ? name.slice(0, -ext.length) : name
+}
+
+/** Display name for a leaf: strips the `.enc` lock suffix (if any) and the note extension. */
+function leafDisplayName(name: string): string {
+  return stripNoteExt(isLockedPath(name) ? name.slice(0, -'.enc'.length) : name)
+}
+
+/**
+ * The trailing suffix to re-attach after a rename so the file keeps its identity:
+ * the note extension, plus `.enc` for a locked note (e.g. `foo.md.enc` -> `.md.enc`).
+ */
+function leafSuffix(name: string): string {
+  return isLockedPath(name) ? `${noteExt(name.slice(0, -'.enc'.length))}.enc` : noteExt(name)
+}
 
 type TreeNode = {
   name: string
@@ -43,7 +74,11 @@ function buildTree(paths: string[], knownFolders: string[] = []): TreeNode[] {
     allSegments.forEach((name, i) => {
       prefix = prefix ? `${prefix}/${name}` : name
       const isLeaf = i === allSegments.length - 1
-      let node = level.find((n) => n.name === name && (isLeaf && !isFolder ? n.children === undefined : n.children !== undefined))
+      let node = level.find(
+        (n) =>
+          n.name === name &&
+          (isLeaf && !isFolder ? n.children === undefined : n.children !== undefined),
+      )
       if (!node) {
         node = isLeaf && !isFolder ? { name, path: prefix } : { name, path: prefix, children: [] }
         level.push(node)
@@ -96,8 +131,11 @@ function TreeRow({
   const openTab = useWorkspaceStore((s) => s.openTab)
   const renameTab = useWorkspaceStore((s) => s.renameTab)
   const renameNote = useVaultStore((s) => s.renameNote)
+  const openLocked = useEncryptionStore((s) => s.openLocked)
+  const lockNoteAction = useEncryptionStore((s) => s.lockNote)
+  const unlockNoteAction = useEncryptionStore((s) => s.unlockNote)
   const [renaming, setRenaming] = useState(false)
-  const [draftName, setDraftName] = useState(node.name)
+  const [draftName, setDraftName] = useState(leafDisplayName(node.name))
   const [renameError, setRenameError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(true)
   const [creatingChild, setCreatingChild] = useState<'note' | 'folder' | null>(null)
@@ -120,7 +158,7 @@ function TreeRow({
   }, [creatingChild])
 
   const startRename = () => {
-    setDraftName(node.name)
+    setDraftName(leafDisplayName(node.name))
     setRenameError(null)
     setRenaming(true)
   }
@@ -130,14 +168,19 @@ function TreeRow({
   }
   const commitRename = async () => {
     const name = draftName.trim()
-    if (name === '' || name === node.name) {
+    if (name === '' || name === leafDisplayName(node.name)) {
       cancelRename()
       return
     }
     // Keep the file in its current folder; only the leaf name changes.
     const slash = node.path.lastIndexOf('/')
     const parent = slash === -1 ? '' : node.path.slice(0, slash + 1)
-    const to = parent + name
+    // The user edits the bare name; re-attach the trailing suffix so the rename
+    // is valid. Locked notes keep their full `.<ext>.enc` suffix; plaintext notes
+    // preserve their extension (or let the user type one), defaulting to `.md`.
+    const to = isLockedPath(node.path)
+      ? parent + name + leafSuffix(node.name)
+      : parent + name + (noteExt(name) ? '' : noteExt(node.name) || '.md')
     const err = await renameNote(node.path, to)
     if (err !== null) {
       // Stay in edit mode so the user can fix it (e.g. bad extension / clash).
@@ -154,7 +197,10 @@ function TreeRow({
   if (node.children) {
     const commitChild = async () => {
       const name = childName.trim()
-      if (!name) { setCreatingChild(null); return }
+      if (!name) {
+        setCreatingChild(null)
+        return
+      }
       if (creatingChild === 'folder') {
         await onCreateFolderIn(`${node.path}/${name}`)
       } else {
@@ -181,39 +227,77 @@ function TreeRow({
           e.dataTransfer.effectAllowed = 'move'
           e.stopPropagation()
         }}
-        onDragEnd={() => { _dragItem = null; setIsDropTarget(false) }}
+        onDragEnd={() => {
+          _dragItem = null
+          setIsDropTarget(false)
+        }}
       >
         <div
           className={`group flex min-w-0 items-center overflow-hidden py-0.5 rounded transition-colors ${isDropTarget ? 'bg-accent-500/10 ring-1 ring-accent-400' : ''}`}
           style={pad}
           onDragOver={handleFolderDragOver}
-          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDropTarget(false) }}
-          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setIsDropTarget(false); onDropOnFolder(node.path) }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDropTarget(false)
+          }}
+          onDrop={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            setIsDropTarget(false)
+            onDropOnFolder(node.path)
+          }}
         >
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
             className="flex min-w-0 flex-1 items-center gap-1 py-0.5 text-left text-xs font-medium text-slate-500 transition hover:text-slate-300 light:text-slate-400 light:hover:text-slate-700"
           >
-            {expanded
-              ? <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
-              : <ChevronRight className="size-3 shrink-0" aria-hidden="true" />}
-            {expanded
-              ? <FolderOpen className="size-3.5 shrink-0 text-slate-400 light:text-slate-500" aria-hidden="true" />
-              : <FolderClosed className="size-3.5 shrink-0 text-slate-400 light:text-slate-500" aria-hidden="true" />}
+            {expanded ? (
+              <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
+            ) : (
+              <ChevronRight className="size-3 shrink-0" aria-hidden="true" />
+            )}
+            {expanded ? (
+              <FolderOpen
+                className="size-3.5 shrink-0 text-slate-400 light:text-slate-500"
+                aria-hidden="true"
+              />
+            ) : (
+              <FolderClosed
+                className="size-3.5 shrink-0 text-slate-400 light:text-slate-500"
+                aria-hidden="true"
+              />
+            )}
             <span className="truncate">{node.name}</span>
           </button>
           <div className="invisible flex shrink-0 items-center gap-0.5 pr-1 group-hover:visible">
-            <button type="button" onClick={() => { setExpanded(true); setCreatingChild('note') }} title="New note here"
-              className="rounded p-0.5 text-slate-500 transition hover:bg-slate-700 hover:text-slate-200 light:hover:bg-slate-200 light:hover:text-slate-700">
+            <button
+              type="button"
+              onClick={() => {
+                setExpanded(true)
+                setCreatingChild('note')
+              }}
+              title="New note here"
+              className="rounded p-0.5 text-slate-500 transition hover:bg-slate-700 hover:text-slate-200 light:hover:bg-slate-200 light:hover:text-slate-700"
+            >
               <FilePlus className="size-3" aria-hidden="true" />
             </button>
-            <button type="button" onClick={() => { setExpanded(true); setCreatingChild('folder') }} title="New subfolder"
-              className="rounded p-0.5 text-slate-500 transition hover:bg-slate-700 hover:text-slate-200 light:hover:bg-slate-200 light:hover:text-slate-700">
+            <button
+              type="button"
+              onClick={() => {
+                setExpanded(true)
+                setCreatingChild('folder')
+              }}
+              title="New subfolder"
+              className="rounded p-0.5 text-slate-500 transition hover:bg-slate-700 hover:text-slate-200 light:hover:bg-slate-200 light:hover:text-slate-700"
+            >
               <FolderPlus className="size-3" aria-hidden="true" />
             </button>
-            <button type="button" onClick={() => onRequestDeleteFolder(node.path)} title="Delete folder"
-              className="rounded p-0.5 text-slate-500 transition hover:bg-slate-700 hover:text-red-400 light:hover:bg-slate-200">
+            <button
+              type="button"
+              onClick={() => onRequestDeleteFolder(node.path)}
+              title="Delete folder"
+              className="rounded p-0.5 text-slate-500 transition hover:bg-slate-700 hover:text-red-400 light:hover:bg-slate-200"
+            >
               <Trash2 className="size-3" aria-hidden="true" />
             </button>
           </div>
@@ -223,17 +307,21 @@ function TreeRow({
           <>
             {creatingChild !== null && (
               <div className="flex items-center gap-1.5 py-1" style={childPad}>
-                {creatingChild === 'folder'
-                  ? <FolderClosed className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
-                  : <File className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />}
+                {creatingChild === 'folder' ? (
+                  <FolderClosed className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
+                ) : (
+                  <File className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
+                )}
                 <input
                   ref={childInputRef}
                   value={childName}
                   placeholder={creatingChild === 'folder' ? 'Folder name' : 'Note name'}
                   onChange={(e) => setChildName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); void commitChild() }
-                    else if (e.key === 'Escape') setCreatingChild(null)
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      void commitChild()
+                    } else if (e.key === 'Escape') setCreatingChild(null)
                   }}
                   onBlur={() => setCreatingChild(null)}
                   className="min-w-0 flex-1 rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-100 outline outline-1 outline-slate-600 light:bg-slate-100 light:text-slate-900 light:outline-slate-300"
@@ -285,6 +373,8 @@ function TreeRow({
   }
 
   const selected = activeTabPath === node.path
+  const locked = isLockedPath(node.path)
+  const label = leafDisplayName(node.name)
   return (
     <div
       draggable
@@ -293,7 +383,9 @@ function TreeRow({
         e.dataTransfer.effectAllowed = 'move'
         e.stopPropagation()
       }}
-      onDragEnd={() => { _dragItem = null }}
+      onDragEnd={() => {
+        _dragItem = null
+      }}
       className={`group flex min-w-0 items-center overflow-hidden border-l-2 transition-colors ${
         selected
           ? 'border-accent-500 bg-accent-500/10'
@@ -302,7 +394,7 @@ function TreeRow({
     >
       <button
         type="button"
-        onClick={() => openTab(node.path)}
+        onClick={() => (locked ? openLocked(node.path) : openTab(node.path))}
         style={pad}
         className={`flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden py-1 text-left text-sm transition ${
           selected
@@ -310,12 +402,33 @@ function TreeRow({
             : 'text-slate-300 group-hover:text-slate-100 light:text-slate-600 light:group-hover:text-slate-900'
         }`}
       >
-        <File
-          className={`size-3.5 shrink-0 ${selected ? 'text-accent-400' : 'text-slate-500 light:text-slate-400'}`}
-          aria-hidden="true"
-        />
-        <span className="truncate">{node.name}</span>
+        {locked ? (
+          <Lock
+            className={`size-3.5 shrink-0 ${selected ? 'text-accent-400' : 'text-amber-500/80 light:text-amber-600'}`}
+            aria-label="Locked"
+          />
+        ) : (
+          <File
+            className={`size-3.5 shrink-0 ${selected ? 'text-accent-400' : 'text-slate-500 light:text-slate-400'}`}
+            aria-hidden="true"
+          />
+        )}
+        <span className="truncate">{label}</span>
       </button>
+      {/* Pin as a desktop sticky (Epic 11). Locked notes can't be stickies in v1. */}
+      {!locked && (
+        <button
+          type="button"
+          onClick={() => window.api.window.sticky.open(node.path)}
+          title="Pin as desktop sticky"
+          className="invisible rounded p-1 text-slate-500 transition hover:bg-slate-700 hover:text-accent-300 group-hover:visible light:hover:bg-slate-200 light:hover:text-slate-700"
+        >
+          <Pin className="size-3.5" aria-hidden="true" />
+          <span className="sr-only">Pin {label} as sticky</span>
+        </button>
+      )}
+      {/* Rename works for locked notes too: it's a filesystem rename that keeps the
+          `.<ext>.enc` suffix and needs no decryption (works even while locked). */}
       <button
         type="button"
         onClick={startRename}
@@ -323,8 +436,29 @@ function TreeRow({
         className="invisible rounded p-1 text-slate-500 transition hover:bg-slate-700 hover:text-slate-200 group-hover:visible light:hover:bg-slate-200 light:hover:text-slate-700"
       >
         <Pencil className="size-3.5" aria-hidden="true" />
-        <span className="sr-only">Rename {node.name}</span>
+        <span className="sr-only">Rename {label}</span>
       </button>
+      {locked ? (
+        <button
+          type="button"
+          onClick={() => unlockNoteAction(node.path)}
+          title="Unlock note (decrypt back to plain markdown)"
+          className="invisible rounded p-1 text-slate-500 transition hover:bg-slate-700 hover:text-amber-400 group-hover:visible light:hover:bg-slate-200"
+        >
+          <LockOpen className="size-3.5" aria-hidden="true" />
+          <span className="sr-only">Unlock {label}</span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => lockNoteAction(node.path)}
+          title="Lock note (encrypt with the vault password)"
+          className="invisible rounded p-1 text-slate-500 transition hover:bg-slate-700 hover:text-amber-400 group-hover:visible light:hover:bg-slate-200"
+        >
+          <Lock className="size-3.5" aria-hidden="true" />
+          <span className="sr-only">Lock {label}</span>
+        </button>
+      )}
       <button
         type="button"
         onClick={() => onRequestDelete(node.path)}
@@ -332,7 +466,7 @@ function TreeRow({
         className="invisible mr-1 rounded p-1 text-slate-500 transition hover:bg-slate-700 hover:text-red-400 group-hover:visible light:hover:bg-slate-200"
       >
         <Trash2 className="size-3.5" aria-hidden="true" />
-        <span className="sr-only">Delete {node.name}</span>
+        <span className="sr-only">Delete {label}</span>
       </button>
     </div>
   )
@@ -420,8 +554,12 @@ export function Sidebar() {
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [folderName, setFolderName] = useState('')
   const [folderError, setFolderError] = useState<string | null>(null)
+  const [creatingNote, setCreatingNote] = useState(false)
+  const [newNoteName, setNewNoteName] = useState('')
+  const [newNoteError, setNewNoteError] = useState<string | null>(null)
   const [rootDropTarget, setRootDropTarget] = useState(false)
   const folderInputRef = useRef<HTMLInputElement>(null)
+  const newNoteInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     loadTags()
@@ -431,12 +569,43 @@ export function Sidebar() {
     if (creatingFolder) folderInputRef.current?.focus()
   }, [creatingFolder])
 
-  const handleNewNote = async () => {
-    const path = await createNote()
-    if (path !== null) await openTab(path)
+  useEffect(() => {
+    if (creatingNote) newNoteInputRef.current?.focus()
+  }, [creatingNote])
+
+  const startCreateNote = () => {
+    setCreatingFolder(false)
+    setNewNoteName('')
+    setNewNoteError(null)
+    setCreatingNote(true)
+  }
+
+  const cancelCreateNote = () => {
+    setCreatingNote(false)
+    setNewNoteError(null)
+  }
+
+  const commitCreateNote = async () => {
+    const name = newNoteName.trim()
+    if (!name) {
+      cancelCreateNote()
+      return
+    }
+    const filename = noteExt(name) ? name : `${name}.md`
+    const path = await createNote(filename)
+    if (path === null) {
+      // Most likely a name clash — keep editing so the user can pick another.
+      setNewNoteError('A note with that name already exists')
+      newNoteInputRef.current?.select()
+      return
+    }
+    setCreatingNote(false)
+    setNewNoteError(null)
+    await openTab(path)
   }
 
   const startCreateFolder = () => {
+    setCreatingNote(false)
     setFolderName('')
     setFolderError(null)
     setCreatingFolder(true)
@@ -483,7 +652,7 @@ export function Sidebar() {
 
   const handleCreateNoteIn = async (folderPath: string, name?: string) => {
     const filename = name ?? `untitled-${Date.now()}.md`
-    const noteName = filename.includes('.') ? filename : `${filename}.md`
+    const noteName = noteExt(filename) ? filename : `${filename}.md`
     const path = await createNote(`${folderPath}/${noteName}`)
     if (path !== null) await openTab(path)
   }
@@ -534,7 +703,7 @@ export function Sidebar() {
           </button>
           <button
             type="button"
-            onClick={handleNewNote}
+            onClick={startCreateNote}
             title="New note"
             className="rounded-md p-1 text-slate-400 transition hover:bg-slate-800 hover:text-accent-300 light:text-slate-500 light:hover:bg-slate-100"
           >
@@ -579,6 +748,33 @@ export function Sidebar() {
           <NotesList />
         ) : (
           <>
+            {creatingNote && (
+              <div className="flex items-center gap-1.5 px-2 py-1">
+                <File className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
+                <input
+                  ref={newNoteInputRef}
+                  value={newNoteName}
+                  aria-label="New note name"
+                  title={newNoteError ?? undefined}
+                  onChange={(e) => setNewNoteName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      void commitCreateNote()
+                    } else if (e.key === 'Escape') {
+                      cancelCreateNote()
+                    }
+                  }}
+                  onBlur={cancelCreateNote}
+                  placeholder="Note name"
+                  className={`min-w-0 flex-1 rounded bg-slate-800 px-1.5 py-0.5 text-sm text-slate-100 placeholder-slate-500 outline outline-1 light:bg-slate-100 light:text-slate-900 light:placeholder-slate-400 ${
+                    newNoteError !== null
+                      ? 'outline-red-500'
+                      : 'outline-slate-600 light:outline-slate-300'
+                  }`}
+                />
+              </div>
+            )}
             {creatingFolder && (
               <div className="flex items-center gap-1.5 px-2 py-1">
                 <FolderClosed className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
@@ -599,7 +795,9 @@ export function Sidebar() {
                   onBlur={cancelCreateFolder}
                   placeholder="Folder name"
                   className={`min-w-0 flex-1 rounded bg-slate-800 px-1.5 py-0.5 text-sm text-slate-100 placeholder-slate-500 outline outline-1 light:bg-slate-100 light:text-slate-900 light:placeholder-slate-400 ${
-                    folderError !== null ? 'outline-red-500' : 'outline-slate-600 light:outline-slate-300'
+                    folderError !== null
+                      ? 'outline-red-500'
+                      : 'outline-slate-600 light:outline-slate-300'
                   }`}
                 />
               </div>
@@ -612,7 +810,7 @@ export function Sidebar() {
                 {!treeLoading && (
                   <button
                     type="button"
-                    onClick={handleNewNote}
+                    onClick={startCreateNote}
                     className="rounded-md bg-accent-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm shadow-accent-500/30 transition hover:bg-accent-500"
                   >
                     Create your first note
@@ -674,7 +872,10 @@ export function Sidebar() {
           </button>
           <div className="text-right">
             <p className="text-[11px] font-semibold text-slate-300 light:text-slate-600">
-              Slate <span className="font-normal text-slate-400 light:text-slate-500">v{__APP_VERSION__}</span>
+              Slate{' '}
+              <span className="font-normal text-slate-400 light:text-slate-500">
+                v{__APP_VERSION__}
+              </span>
             </p>
             <p className="text-[10px] text-slate-400 light:text-slate-500">Created by Sefa Çakır</p>
           </div>
