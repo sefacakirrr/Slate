@@ -2,8 +2,8 @@ import { api } from '@renderer/api'
 import { useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { useThemeStore } from '@renderer/stores/themeStore'
 import { useVaultStore } from '@renderer/stores/vaultStore'
-import type { ThemeMode } from '@shared/types'
-import { useState } from 'react'
+import type { ThemeMode, UpdateState } from '@shared/types'
+import { useEffect, useState } from 'react'
 
 const mod = api.platform === 'darwin' ? '⌘' : 'Ctrl'
 
@@ -25,6 +25,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const lockVaultNow = useEncryptionStore((s) => s.lockVaultNow)
   const [rebuilding, setRebuilding] = useState(false)
   const [rebuildStatus, setRebuildStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [update, setUpdate] = useState<UpdateState | { status: 'idle' }>({ status: 'idle' })
+
+  // Subscribe to update-state pushes from main (Epic 12).
+  useEffect(() => api.update.onState(setUpdate), [])
+
+  const busyUpdate = update.status === 'checking' || update.status === 'downloading'
 
   return (
     <div className="flex h-full flex-col bg-slate-950 dark:bg-slate-950 light:bg-white">
@@ -186,6 +192,86 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             )}
             {rebuildStatus === 'error' && (
               <span className="text-xs text-red-400 light:text-red-600">Failed</span>
+            )}
+          </div>
+        </section>
+
+        {/* Updates (Epic 12) */}
+        <section>
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
+            Updates
+          </h3>
+          <div className="flex flex-col gap-2">
+            <span className="text-xs text-slate-500 light:text-slate-400">
+              Current version: v{__APP_VERSION__}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={busyUpdate || update.status === 'dev-disabled'}
+                onClick={() => {
+                  setUpdate({ status: 'checking' })
+                  void api.update.check()
+                }}
+                className="shrink-0 rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
+              >
+                {update.status === 'checking' ? 'Checking…' : 'Check for updates'}
+              </button>
+
+              {/* Windows: a downloaded update can be installed with a restart. */}
+              {update.status === 'downloaded' && (
+                <button
+                  type="button"
+                  onClick={() => void api.update.install()}
+                  className="shrink-0 rounded-md bg-accent-600 px-3 py-2 text-xs font-medium text-white shadow-sm shadow-accent-500/30 hover:bg-accent-500"
+                >
+                  Restart to update
+                </button>
+              )}
+
+              {/* macOS: a newer release is available on the Releases page. */}
+              {update.status === 'available' && update.url && (
+                <button
+                  type="button"
+                  onClick={() => void api.update.openReleases(update.url)}
+                  className="shrink-0 rounded-md bg-accent-600 px-3 py-2 text-xs font-medium text-white shadow-sm shadow-accent-500/30 hover:bg-accent-500"
+                >
+                  Open Releases
+                </button>
+              )}
+            </div>
+
+            {/* Status line */}
+            {update.status === 'up-to-date' && (
+              <span className="text-xs text-green-400 light:text-green-600">
+                You're up to date.
+              </span>
+            )}
+            {update.status === 'available' && (
+              <span className="text-xs text-slate-400 light:text-slate-500">
+                Version {update.version} is available
+                {update.url ? '.' : ' — downloading…'}
+              </span>
+            )}
+            {update.status === 'downloading' && (
+              <span className="text-xs text-slate-400 light:text-slate-500">
+                Downloading… {update.percent ?? 0}%
+              </span>
+            )}
+            {update.status === 'downloaded' && (
+              <span className="text-xs text-slate-400 light:text-slate-500">
+                Version {update.version} downloaded — restart to install.
+              </span>
+            )}
+            {update.status === 'dev-disabled' && (
+              <span className="text-xs text-slate-500 light:text-slate-400">
+                Updates are only available in the installed app.
+              </span>
+            )}
+            {update.status === 'error' && (
+              <span className="text-xs text-red-400 light:text-red-600">
+                Update check failed: {update.error}
+              </span>
             )}
           </div>
         </section>

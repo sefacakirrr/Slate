@@ -103,6 +103,18 @@ const api: Api = {
       close: (path) => invoke('window:sticky:close', path),
     },
   },
+  update: {
+    check: () => invoke('update:check'),
+    install: () => invoke('update:install'),
+    openReleases: (url) => invoke('update:openReleases', url),
+    onState: (cb) => {
+      const listener = (_event: unknown, state: Parameters<typeof cb>[0]) => cb(state)
+      ipcRenderer.on('update:state', listener)
+      return () => {
+        ipcRenderer.removeListener('update:state', listener)
+      }
+    },
+  },
 }
 
 contextBridge.exposeInMainWorld('api', api)

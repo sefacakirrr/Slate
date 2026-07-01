@@ -7,7 +7,7 @@
  * boundary, so renderer code always destructures `result.ok` to narrow safely.
  */
 
-import type { NoteListItem, SearchResult, TagInfo, ThemeMode } from './types'
+import type { NoteListItem, SearchResult, TagInfo, ThemeMode, UpdateState } from './types'
 
 /** Discriminated union returned from every IPC handler. */
 export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -95,6 +95,12 @@ export type IpcCommands = {
   'window:close': { request: undefined; response: undefined }
   'window:forceClose': { request: undefined; response: undefined }
   'window:isMaximized': { request: undefined; response: boolean }
+  /** Trigger an update check (Epic 12); outcomes arrive via the `update:state` event. */
+  'update:check': { request: undefined; response: undefined }
+  /** Windows: install the downloaded update and relaunch. */
+  'update:install': { request: undefined; response: undefined }
+  /** macOS: open the GitHub Releases page (optionally a specific URL). */
+  'update:openReleases': { request: string | undefined; response: undefined }
 }
 
 export type IpcChannel = keyof IpcCommands
@@ -182,5 +188,13 @@ export type Api = {
       open: (path: string) => Promise<IpcResult<undefined>>
       close: (path: string) => Promise<IpcResult<undefined>>
     }
+  }
+  /** In-app updates (Epic 12). */
+  update: {
+    check: () => Promise<IpcResult<undefined>>
+    install: () => Promise<IpcResult<undefined>>
+    openReleases: (url?: string) => Promise<IpcResult<undefined>>
+    /** Subscribe to update-state transitions. Returns an unsubscribe function. */
+    onState: (cb: (state: UpdateState) => void) => () => void
   }
 }

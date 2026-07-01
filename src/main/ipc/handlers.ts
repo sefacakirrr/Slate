@@ -7,6 +7,7 @@ import type { IndexService } from '../services/IndexService'
 import { reconcileIndex } from '../services/reconcile'
 import type { SearchService } from '../services/SearchService'
 import type { SettingsService } from '../services/SettingsService'
+import type { UpdateService } from '../services/UpdateService'
 import { VaultService } from '../services/VaultService'
 import type { WindowManager } from '../windows/WindowManager'
 
@@ -27,6 +28,7 @@ type Deps = {
   search: SearchService
   attachment: AttachmentService
   encryption: EncryptionService
+  update: UpdateService
   windowManager: WindowManager
   /** The window the native dialogs should attach to, if any. */
   getMainWindow: () => BrowserWindow | null
@@ -300,6 +302,18 @@ function buildHandlers(deps: Deps): HandlerMap {
       deps.windowManager.closeSticky(path)
       return undefined
     },
+    'update:check': () => {
+      deps.update.check()
+      return undefined
+    },
+    'update:install': () => {
+      deps.update.install()
+      return undefined
+    },
+    'update:openReleases': async (url) => {
+      await deps.update.openReleases(url)
+      return undefined
+    },
     'window:minimize': () => {
       deps.getMainWindow()?.minimize()
       return undefined
@@ -386,6 +400,9 @@ export function registerIpcHandlers(ipc: IpcMain, deps: Deps): void {
   register(ipc, 'index:rebuild', handlers['index:rebuild'])
   register(ipc, 'window:sticky:open', handlers['window:sticky:open'])
   register(ipc, 'window:sticky:close', handlers['window:sticky:close'])
+  register(ipc, 'update:check', handlers['update:check'])
+  register(ipc, 'update:install', handlers['update:install'])
+  register(ipc, 'update:openReleases', handlers['update:openReleases'])
   register(ipc, 'window:minimize', handlers['window:minimize'])
   register(ipc, 'window:toggleMaximize', handlers['window:toggleMaximize'])
   register(ipc, 'window:close', handlers['window:close'])

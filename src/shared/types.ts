@@ -27,3 +27,25 @@ export type NoteListItem = {
   snippet: string
   mtime: number
 }
+
+/** In-app update states (Epic 12), pushed from main via the `update:state` event. */
+export type UpdateStatus =
+  | 'dev-disabled'
+  | 'checking'
+  | 'up-to-date'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+
+export type UpdateState = {
+  status: UpdateStatus
+  /** The latest available version (on `available`/`downloaded`). */
+  version?: string
+  /** Download progress 0–100 (Windows, on `downloading`). */
+  percent?: number
+  /** GitHub Releases URL to open (macOS, on `available`). */
+  url?: string
+  /** Human-readable error (on `error`). */
+  error?: string
+}

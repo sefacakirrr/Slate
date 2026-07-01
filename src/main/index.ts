@@ -9,6 +9,7 @@ import { IndexService } from './services/IndexService'
 import { reconcileIndex } from './services/reconcile'
 import { SearchService } from './services/SearchService'
 import { SettingsService } from './services/SettingsService'
+import { UpdateService } from './services/UpdateService'
 import { VaultService } from './services/VaultService'
 import { ShortcutManager } from './windows/ShortcutManager'
 import { WindowManager } from './windows/WindowManager'
@@ -58,6 +59,11 @@ app.whenReady().then(async () => {
   const encryption = new EncryptionService()
   // Sticky windows (Epic 11) persist their geometry through settings.
   windowManager.attachSettings(settings)
+  // In-app updates (Epic 12): push state to the main window's renderer.
+  const update = new UpdateService((state) => {
+    const win = windowManager.getMainWindow()
+    if (win && !win.isDestroyed()) win.webContents.send('update:state', state)
+  })
 
   registerIpcHandlers(ipcMain, {
     settings,
@@ -65,6 +71,7 @@ app.whenReady().then(async () => {
     search,
     attachment,
     encryption,
+    update,
     windowManager,
     getMainWindow: () => windowManager.getMainWindow(),
   })

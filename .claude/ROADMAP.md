@@ -2,7 +2,7 @@
 
 > **Project**: Slate
 > **Created**: 2026-05-18
-> **Last updated**: 2026-07-01 (sticky notes shipped in v0.1.9)
+> **Last updated**: 2026-07-01 (in-app update shipped in v0.1.10)
 
 ---
 
@@ -57,6 +57,7 @@
 | E8 | epic | Settings UI & Theme — Settings panel, dark/light/system toggle, CM6 theme switching, vault path display (user-verified) | 2026-06-19 | Settings & UX Polish |
 | E10 | epic | Note Encryption — optional per-note at-rest encryption (scrypt + AES-256-GCM), single vault password in memory, `.md.enc` container, FTS index exclusion, lock/unlock UI (user-verified on macOS; Windows round-trip deferred). Shipped in v0.1.8 | 2026-07-01 | Note Encryption / Locking |
 | E11 | epic | Desktop Sticky Notes — frameless always-on-top sticky windows per pinned note, geometry persist/restore, pin UI, near-live multi-window sync (autosave + reload-if-not-dirty), tab-label extension hiding (user-verified on macOS; Windows deferred). Shipped in v0.1.9 | 2026-07-01 | Desktop Sticky Notes |
+| E12 | epic | In-App Update — Settings "Check for updates": Windows electron-updater download+install; macOS GitHub API version check → open Releases (signing-independent). Impl complete; UAT post-release. Shipped in v0.1.10 | 2026-07-01 | Packaging & Distribution |
 
 Vision, TECHSTACK.md, ARCHITECTURE.md authored; Electron+React+Tailwind+CodeMirror scaffold built and verified end-to-end (`npm run build`, `npm run check`, `npm run typecheck` all green; `npm run dev` launches an empty shell). Pre-feature state.
 
