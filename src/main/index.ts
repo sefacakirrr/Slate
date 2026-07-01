@@ -1,10 +1,10 @@
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, ipcMain, net, protocol } from 'electron'
+import { app, ipcMain, net, protocol } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { registerIpcHandlers } from './ipc/handlers'
 import { AttachmentService } from './services/AttachmentService'
-import { EncryptionService } from './services/EncryptionService'
+import { EncryptionService, isEncryptedPath } from './services/EncryptionService'
 import { IndexService } from './services/IndexService'
 import { reconcileIndex } from './services/reconcile'
 import { SearchService } from './services/SearchService'
@@ -56,6 +56,8 @@ app.whenReady().then(async () => {
   })
   // Holds the vault session key in memory only (Epic 10). No disk/keychain.
   const encryption = new EncryptionService()
+  // Sticky windows (Epic 11) persist their geometry through settings.
+  windowManager.attachSettings(settings)
 
   registerIpcHandlers(ipcMain, {
     settings,
@@ -91,9 +93,35 @@ app.whenReady().then(async () => {
     })
     .catch((err) => console.error('index reconciliation failed:', err))
 
+  // Restore pinned sticky notes (Epic 11). Skip a note that no longer exists or
+  // is now locked (locked notes can't be stickies in v1).
+  const isPinnable = async (notePath: string): Promise<boolean> => {
+    if (isEncryptedPath(notePath)) return false
+    const vaultPath = await settings.getVaultPath()
+    if (vaultPath === null) return false
+    try {
+      await new VaultService(vaultPath).statMtime(notePath)
+      return true
+    } catch {
+      return false
+    }
+  }
+  windowManager
+    .restoreStickies(isPinnable)
+    .catch((err) => console.error('sticky restore failed:', err))
+
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) windowManager.createMainWindow()
+    // Check the MAIN window specifically, not total window count: with a sticky
+    // open but the main window closed (macOS keeps the app alive), getAllWindows()
+    // is non-empty, so the dock icon must still be able to reopen the main window.
+    if (windowManager.getMainWindow() === null) windowManager.createMainWindow()
   })
+})
+
+// Before windows start closing, mark quitting so sticky 'closed' handlers keep
+// them persisted (for restore) and flush their latest geometry.
+app.on('before-quit', () => {
+  windowManager.markQuitting()
 })
 
 app.on('will-quit', () => {

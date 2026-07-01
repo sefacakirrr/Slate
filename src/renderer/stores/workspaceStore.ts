@@ -47,6 +47,13 @@ type WorkspaceState = {
   reset: () => void
   /** Re-points an open tab after a rename, keeping its draft/baseline/dirty. */
   renameTab: (oldPath: string, newPath: string) => void
+  /**
+   * Reloads an open tab's content from disk after an external change (Epic 11
+   * Phase 03). Returns the new content to apply to the editor, or null when
+   * nothing should change — the tab is dirty (keep the user's edits), not open,
+   * or the disk content already matches (e.g. this window's own save).
+   */
+  reloadTab: (path: string) => Promise<string | null>
   /** Closes all tabs whose paths are inside the given folder (no dirty check). */
   closeFolderTabs: (folderPath: string) => void
 }
@@ -190,6 +197,23 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       activeTabPath: s.activeTabPath === oldPath ? newPath : s.activeTabPath,
     }))
     persistWorkspace(get().tabs, get().activeTabPath)
+  },
+
+  reloadTab: async (path) => {
+    const tab = get().tabs.find((t) => t.path === path)
+    // Not open, or dirty (never clobber unsaved edits) → skip.
+    if (tab === undefined || tab.dirty) return null
+    const result = await api.vault.readNote(path)
+    if (!result.ok) return null
+    // No-op when disk already matches (e.g. this window's own save).
+    if (result.data === tab.baseline) return null
+    const content = result.data
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.path === path ? { ...t, baseline: content, draft: content, dirty: false } : t,
+      ),
+    }))
+    return content
   },
 
   closeFolderTabs: (folderPath) => {

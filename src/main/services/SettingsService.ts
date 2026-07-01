@@ -14,6 +14,12 @@ export type WorkspaceData = {
   activeTab: string | null
 }
 
+/** A pinned sticky note: the vault-relative note path + its window geometry (Epic 11). */
+export type StickyRecord = {
+  path: string
+  bounds: { x: number; y: number; width: number; height: number }
+}
+
 type SettingsData = {
   vaultPath: string | null
   /** Open tabs + active tab, restored on next launch. */
@@ -26,6 +32,8 @@ type SettingsData = {
    * EncryptionService memory for the session.
    */
   encryption: VaultSecret | null
+  /** Pinned sticky notes with their window geometry (Epic 11). */
+  stickies: StickyRecord[]
 }
 
 const DEFAULTS: SettingsData = {
@@ -33,6 +41,7 @@ const DEFAULTS: SettingsData = {
   workspace: { openTabs: [], activeTab: null },
   theme: 'dark',
   encryption: null,
+  stickies: [],
 }
 
 /**
@@ -125,5 +134,39 @@ export class SettingsService {
   async setEncryption(encryption: VaultSecret): Promise<void> {
     const data = await this.load()
     await this.persist({ ...data, encryption })
+  }
+
+  /** The pinned sticky notes (path + geometry), or [] if none. */
+  async getStickies(): Promise<StickyRecord[]> {
+    const data = await this.load()
+    return data.stickies ?? []
+  }
+
+  /** Replaces the full set of pinned stickies. */
+  async setStickies(stickies: StickyRecord[]): Promise<void> {
+    const data = await this.load()
+    await this.persist({ ...data, stickies })
+  }
+
+  /**
+   * Upserts one sticky's geometry (adds it if not present). Used both when a
+   * sticky is opened and when it is moved/resized.
+   */
+  async updateStickyGeometry(path: string, bounds: StickyRecord['bounds']): Promise<void> {
+    const data = await this.load()
+    const stickies = data.stickies ?? []
+    const idx = stickies.findIndex((s) => s.path === path)
+    const next =
+      idx === -1
+        ? [...stickies, { path, bounds }]
+        : stickies.map((s) => (s.path === path ? { path, bounds } : s))
+    await this.persist({ ...data, stickies: next })
+  }
+
+  /** Removes one sticky from the persisted set (on close). */
+  async removeSticky(path: string): Promise<void> {
+    const data = await this.load()
+    const stickies = (data.stickies ?? []).filter((s) => s.path !== path)
+    await this.persist({ ...data, stickies })
   }
 }

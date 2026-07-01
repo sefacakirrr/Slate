@@ -50,9 +50,9 @@ Slate is a process-separated, service-oriented Electron application. The **main 
 - **Key patterns**: Query Object (filter composition)
 
 #### SettingsService
-- **Responsibility**: Persist user preferences (vault path, theme, hotkey binding, highlight palette). Stored as JSON in Electron's `userData` directory.
+- **Responsibility**: Persist user preferences (vault path, theme, hotkey binding, highlight palette, workspace tabs, encryption salt+verifier). *(Epic 11)* also the set of pinned sticky notes with each one's window geometry (position + size). Stored as JSON in Electron's `userData` directory.
 - **Depends on**: Node `fs`, `app.getPath('userData')`
-- **Exposes**: `get(key)`, `set(key, value)`, `getAll()`, `subscribe(handler)`
+- **Exposes**: `get(key)`, `set(key, value)`, `getAll()`, `subscribe(handler)` *(plus typed accessors per concern, e.g. `getStickies()`/`setStickies()`)*
 
 #### AttachmentService
 - **Responsibility**: Image/file paste and drag-drop handling. Hash-named storage under `vault/_attachments/`. Cleanup of orphans (deferred — not v1).
@@ -68,9 +68,11 @@ Slate is a process-separated, service-oriented Electron application. The **main 
   - `IndexService` — **hard requirement**: locked notes are removed from the FTS index and skipped while locked, or the plaintext search index leaks their content. This is a security boundary, not an optimization.
 
 #### WindowManager
-- **Responsibility**: Main editor window and quick-capture popup window lifecycle. BrowserWindow creation, focus management, dev-tools wiring.
-- **Depends on**: Electron `BrowserWindow`, `app`
-- **Exposes**: `openMain()`, `openQuickCapture()`, `closeQuickCapture()`
+- **Responsibility**: Main editor window and quick-capture popup window lifecycle. BrowserWindow creation, focus management, dev-tools wiring. *(Planned, Epic 11)* also owns **sticky-note windows**: frameless, `alwaysOnTop`, show-on-all-workspaces `BrowserWindow`s, one per pinned note, addressed by a route hash (same renderer bundle as quick-capture). Tracks the live sticky windows by note path; restores them on launch from persisted state.
+- **Depends on**: Electron `BrowserWindow`, `app`, *(Epic 11)* `SettingsService` (persisted sticky set + geometry)
+- **Exposes**: `openMain()`, `openQuickCapture()`, `closeQuickCapture()`, *(planned)* `openSticky(path)`, `closeSticky(path)`, `restoreStickies()`
+
+> **Sticky-note consistency**: a sticky renders the same vault `.md` file as the main window may have open. The vault file stays the single source of truth; a sticky saves through the normal `writeNote` path, and the existing `vault:filesChanged` event lets other windows (main + other stickies) reconcile. No new sync mechanism — the tab dirty/save model already covers concurrent edits.
 
 #### ShortcutManager
 - **Responsibility**: Register and tear down Electron `globalShortcut` bindings (especially the quick-capture hotkey). Read binding from `SettingsService`.

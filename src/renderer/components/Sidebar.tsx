@@ -20,6 +20,7 @@ import {
   Lock,
   LockOpen,
   Pencil,
+  Pin,
   RefreshCw,
   Settings,
   Trash2,
@@ -73,7 +74,11 @@ function buildTree(paths: string[], knownFolders: string[] = []): TreeNode[] {
     allSegments.forEach((name, i) => {
       prefix = prefix ? `${prefix}/${name}` : name
       const isLeaf = i === allSegments.length - 1
-      let node = level.find((n) => n.name === name && (isLeaf && !isFolder ? n.children === undefined : n.children !== undefined))
+      let node = level.find(
+        (n) =>
+          n.name === name &&
+          (isLeaf && !isFolder ? n.children === undefined : n.children !== undefined),
+      )
       if (!node) {
         node = isLeaf && !isFolder ? { name, path: prefix } : { name, path: prefix, children: [] }
         level.push(node)
@@ -192,7 +197,10 @@ function TreeRow({
   if (node.children) {
     const commitChild = async () => {
       const name = childName.trim()
-      if (!name) { setCreatingChild(null); return }
+      if (!name) {
+        setCreatingChild(null)
+        return
+      }
       if (creatingChild === 'folder') {
         await onCreateFolderIn(`${node.path}/${name}`)
       } else {
@@ -219,39 +227,77 @@ function TreeRow({
           e.dataTransfer.effectAllowed = 'move'
           e.stopPropagation()
         }}
-        onDragEnd={() => { _dragItem = null; setIsDropTarget(false) }}
+        onDragEnd={() => {
+          _dragItem = null
+          setIsDropTarget(false)
+        }}
       >
         <div
           className={`group flex min-w-0 items-center overflow-hidden py-0.5 rounded transition-colors ${isDropTarget ? 'bg-accent-500/10 ring-1 ring-accent-400' : ''}`}
           style={pad}
           onDragOver={handleFolderDragOver}
-          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDropTarget(false) }}
-          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setIsDropTarget(false); onDropOnFolder(node.path) }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDropTarget(false)
+          }}
+          onDrop={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            setIsDropTarget(false)
+            onDropOnFolder(node.path)
+          }}
         >
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
             className="flex min-w-0 flex-1 items-center gap-1 py-0.5 text-left text-xs font-medium text-slate-500 transition hover:text-slate-300 light:text-slate-400 light:hover:text-slate-700"
           >
-            {expanded
-              ? <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
-              : <ChevronRight className="size-3 shrink-0" aria-hidden="true" />}
-            {expanded
-              ? <FolderOpen className="size-3.5 shrink-0 text-slate-400 light:text-slate-500" aria-hidden="true" />
-              : <FolderClosed className="size-3.5 shrink-0 text-slate-400 light:text-slate-500" aria-hidden="true" />}
+            {expanded ? (
+              <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
+            ) : (
+              <ChevronRight className="size-3 shrink-0" aria-hidden="true" />
+            )}
+            {expanded ? (
+              <FolderOpen
+                className="size-3.5 shrink-0 text-slate-400 light:text-slate-500"
+                aria-hidden="true"
+              />
+            ) : (
+              <FolderClosed
+                className="size-3.5 shrink-0 text-slate-400 light:text-slate-500"
+                aria-hidden="true"
+              />
+            )}
             <span className="truncate">{node.name}</span>
           </button>
           <div className="invisible flex shrink-0 items-center gap-0.5 pr-1 group-hover:visible">
-            <button type="button" onClick={() => { setExpanded(true); setCreatingChild('note') }} title="New note here"
-              className="rounded p-0.5 text-slate-500 transition hover:bg-slate-700 hover:text-slate-200 light:hover:bg-slate-200 light:hover:text-slate-700">
+            <button
+              type="button"
+              onClick={() => {
+                setExpanded(true)
+                setCreatingChild('note')
+              }}
+              title="New note here"
+              className="rounded p-0.5 text-slate-500 transition hover:bg-slate-700 hover:text-slate-200 light:hover:bg-slate-200 light:hover:text-slate-700"
+            >
               <FilePlus className="size-3" aria-hidden="true" />
             </button>
-            <button type="button" onClick={() => { setExpanded(true); setCreatingChild('folder') }} title="New subfolder"
-              className="rounded p-0.5 text-slate-500 transition hover:bg-slate-700 hover:text-slate-200 light:hover:bg-slate-200 light:hover:text-slate-700">
+            <button
+              type="button"
+              onClick={() => {
+                setExpanded(true)
+                setCreatingChild('folder')
+              }}
+              title="New subfolder"
+              className="rounded p-0.5 text-slate-500 transition hover:bg-slate-700 hover:text-slate-200 light:hover:bg-slate-200 light:hover:text-slate-700"
+            >
               <FolderPlus className="size-3" aria-hidden="true" />
             </button>
-            <button type="button" onClick={() => onRequestDeleteFolder(node.path)} title="Delete folder"
-              className="rounded p-0.5 text-slate-500 transition hover:bg-slate-700 hover:text-red-400 light:hover:bg-slate-200">
+            <button
+              type="button"
+              onClick={() => onRequestDeleteFolder(node.path)}
+              title="Delete folder"
+              className="rounded p-0.5 text-slate-500 transition hover:bg-slate-700 hover:text-red-400 light:hover:bg-slate-200"
+            >
               <Trash2 className="size-3" aria-hidden="true" />
             </button>
           </div>
@@ -261,17 +307,21 @@ function TreeRow({
           <>
             {creatingChild !== null && (
               <div className="flex items-center gap-1.5 py-1" style={childPad}>
-                {creatingChild === 'folder'
-                  ? <FolderClosed className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
-                  : <File className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />}
+                {creatingChild === 'folder' ? (
+                  <FolderClosed className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
+                ) : (
+                  <File className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
+                )}
                 <input
                   ref={childInputRef}
                   value={childName}
                   placeholder={creatingChild === 'folder' ? 'Folder name' : 'Note name'}
                   onChange={(e) => setChildName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); void commitChild() }
-                    else if (e.key === 'Escape') setCreatingChild(null)
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      void commitChild()
+                    } else if (e.key === 'Escape') setCreatingChild(null)
                   }}
                   onBlur={() => setCreatingChild(null)}
                   className="min-w-0 flex-1 rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-100 outline outline-1 outline-slate-600 light:bg-slate-100 light:text-slate-900 light:outline-slate-300"
@@ -333,7 +383,9 @@ function TreeRow({
         e.dataTransfer.effectAllowed = 'move'
         e.stopPropagation()
       }}
-      onDragEnd={() => { _dragItem = null }}
+      onDragEnd={() => {
+        _dragItem = null
+      }}
       className={`group flex min-w-0 items-center overflow-hidden border-l-2 transition-colors ${
         selected
           ? 'border-accent-500 bg-accent-500/10'
@@ -363,6 +415,18 @@ function TreeRow({
         )}
         <span className="truncate">{label}</span>
       </button>
+      {/* Pin as a desktop sticky (Epic 11). Locked notes can't be stickies in v1. */}
+      {!locked && (
+        <button
+          type="button"
+          onClick={() => window.api.window.sticky.open(node.path)}
+          title="Pin as desktop sticky"
+          className="invisible rounded p-1 text-slate-500 transition hover:bg-slate-700 hover:text-accent-300 group-hover:visible light:hover:bg-slate-200 light:hover:text-slate-700"
+        >
+          <Pin className="size-3.5" aria-hidden="true" />
+          <span className="sr-only">Pin {label} as sticky</span>
+        </button>
+      )}
       {/* Rename works for locked notes too: it's a filesystem rename that keeps the
           `.<ext>.enc` suffix and needs no decryption (works even while locked). */}
       <button
@@ -704,7 +768,9 @@ export function Sidebar() {
                   onBlur={cancelCreateNote}
                   placeholder="Note name"
                   className={`min-w-0 flex-1 rounded bg-slate-800 px-1.5 py-0.5 text-sm text-slate-100 placeholder-slate-500 outline outline-1 light:bg-slate-100 light:text-slate-900 light:placeholder-slate-400 ${
-                    newNoteError !== null ? 'outline-red-500' : 'outline-slate-600 light:outline-slate-300'
+                    newNoteError !== null
+                      ? 'outline-red-500'
+                      : 'outline-slate-600 light:outline-slate-300'
                   }`}
                 />
               </div>
@@ -729,7 +795,9 @@ export function Sidebar() {
                   onBlur={cancelCreateFolder}
                   placeholder="Folder name"
                   className={`min-w-0 flex-1 rounded bg-slate-800 px-1.5 py-0.5 text-sm text-slate-100 placeholder-slate-500 outline outline-1 light:bg-slate-100 light:text-slate-900 light:placeholder-slate-400 ${
-                    folderError !== null ? 'outline-red-500' : 'outline-slate-600 light:outline-slate-300'
+                    folderError !== null
+                      ? 'outline-red-500'
+                      : 'outline-slate-600 light:outline-slate-300'
                   }`}
                 />
               </div>
@@ -804,7 +872,10 @@ export function Sidebar() {
           </button>
           <div className="text-right">
             <p className="text-[11px] font-semibold text-slate-300 light:text-slate-600">
-              Slate <span className="font-normal text-slate-400 light:text-slate-500">v{__APP_VERSION__}</span>
+              Slate{' '}
+              <span className="font-normal text-slate-400 light:text-slate-500">
+                v{__APP_VERSION__}
+              </span>
             </p>
             <p className="text-[10px] text-slate-400 light:text-slate-500">Created by Sefa Çakır</p>
           </div>

@@ -103,6 +103,8 @@ function buildHandlers(deps: Deps): HandlerMap {
       if (deps.encryption.isLocked(req.path)) {
         if (!deps.encryption.isUnlocked()) throw new Error('note-locked')
         await v.writeBytes(req.path, deps.encryption.sealForSession(req.content))
+        deps.windowManager.broadcastFilesChanged()
+        deps.windowManager.broadcastNoteChanged(req.path)
         return undefined
       }
       await v.writeNote(req.path, req.content)
@@ -111,6 +113,9 @@ function buildHandlers(deps: Deps): HandlerMap {
       } catch (err) {
         console.error('index writeNote failed:', err)
       }
+      deps.windowManager.broadcastFilesChanged()
+      // Content changed → let other windows showing this note reload (if not dirty).
+      deps.windowManager.broadcastNoteChanged(req.path)
       return undefined
     },
     'vault:createNote': async (path) => {
@@ -121,11 +126,13 @@ function buildHandlers(deps: Deps): HandlerMap {
       } catch (err) {
         console.error('index createNote failed:', err)
       }
+      deps.windowManager.broadcastFilesChanged()
       return undefined
     },
     'vault:deleteNote': async (path) => {
       await (await vault()).deleteNote(path)
       tryIndex('deleteNote', () => deps.index.removeNote(path))
+      deps.windowManager.broadcastFilesChanged()
       return undefined
     },
     'vault:deleteFolder': async (path) => {
@@ -137,6 +144,7 @@ function buildHandlers(deps: Deps): HandlerMap {
       for (const p of toRemove) {
         tryIndex('deleteFolder/removeNote', () => deps.index.removeNote(p))
       }
+      deps.windowManager.broadcastFilesChanged()
       return undefined
     },
     'vault:createFolder': async (path) => {
@@ -146,6 +154,7 @@ function buildHandlers(deps: Deps): HandlerMap {
     'vault:renameNote': async (req) => {
       await (await vault()).renameNote(req.from, req.to)
       tryIndex('renameNote', () => deps.index.renameNote(req.from, req.to))
+      deps.windowManager.broadcastFilesChanged()
       return undefined
     },
     'vault:renameFolder': async (req) => {
@@ -159,6 +168,7 @@ function buildHandlers(deps: Deps): HandlerMap {
         const newPath = toPrefix + p.slice(fromPrefix.length)
         tryIndex('renameFolder/renameNote', () => deps.index.renameNote(p, newPath))
       }
+      deps.windowManager.broadcastFilesChanged()
       return undefined
     },
     'vault:hasPassword': async () => (await deps.settings.getEncryption()) !== null,
@@ -204,6 +214,9 @@ function buildHandlers(deps: Deps): HandlerMap {
       await v.deleteNote(path)
       // Remove the now-encrypted note from the search index (security boundary).
       tryIndex('lockNote', () => deps.index.removeNote(path))
+      // The note's path changed to `.enc` — refresh every window (a sticky on the
+      // old path will re-check and close itself, since locked notes can't be stickies).
+      deps.windowManager.broadcastFilesChanged()
       return { path: encPath }
     },
     'vault:unlockNote': async (path) => {
@@ -220,6 +233,7 @@ function buildHandlers(deps: Deps): HandlerMap {
       } catch (err) {
         console.error('index unlockNote failed:', err)
       }
+      deps.windowManager.broadcastFilesChanged()
       return { path: plainPath }
     },
     'search:query': (query) => deps.search.search(query),
@@ -250,11 +264,8 @@ function buildHandlers(deps: Deps): HandlerMap {
         console.error('index capture:save failed:', err)
       }
       deps.windowManager.closeQuickCapture()
-      // Notify main window to refresh file list
-      const mainWin = deps.getMainWindow()
-      if (mainWin && !mainWin.isDestroyed()) {
-        mainWin.webContents.send('vault:filesChanged')
-      }
+      // Refresh every window's file list (main + any stickies).
+      deps.windowManager.broadcastFilesChanged()
       return { path: filename }
     },
     'capture:close': () => {
@@ -276,6 +287,17 @@ function buildHandlers(deps: Deps): HandlerMap {
         })),
       )
       deps.index.rebuild(entries)
+      return undefined
+    },
+    'window:sticky:open': (path) => {
+      // Locked notes are excluded from stickies in v1 (a floating window can't sit
+      // behind a password prompt). Defense in depth — the UI also hides the action.
+      if (deps.encryption.isLocked(path)) throw new Error('cannot-pin-locked')
+      deps.windowManager.openSticky(path)
+      return undefined
+    },
+    'window:sticky:close': (path) => {
+      deps.windowManager.closeSticky(path)
       return undefined
     },
     'window:minimize': () => {
@@ -362,6 +384,8 @@ export function registerIpcHandlers(ipc: IpcMain, deps: Deps): void {
   register(ipc, 'capture:save', handlers['capture:save'])
   register(ipc, 'capture:close', handlers['capture:close'])
   register(ipc, 'index:rebuild', handlers['index:rebuild'])
+  register(ipc, 'window:sticky:open', handlers['window:sticky:open'])
+  register(ipc, 'window:sticky:close', handlers['window:sticky:close'])
   register(ipc, 'window:minimize', handlers['window:minimize'])
   register(ipc, 'window:toggleMaximize', handlers['window:toggleMaximize'])
   register(ipc, 'window:close', handlers['window:close'])

@@ -85,6 +85,10 @@ export type IpcCommands = {
     request: undefined
     response: undefined
   }
+  /** Open (or focus) a sticky-note window for a note path (Epic 11). */
+  'window:sticky:open': { request: string; response: undefined }
+  /** Close a sticky-note window by note path (unpins it). */
+  'window:sticky:close': { request: string; response: undefined }
   'window:minimize': { request: undefined; response: undefined }
   /** Toggles maximize/restore; resolves to the resulting maximized state. */
   'window:toggleMaximize': { request: undefined; response: boolean }
@@ -170,6 +174,13 @@ export type Api = {
      */
     onMaximizeChange: (cb: (isMaximized: boolean) => void) => () => void
     onFilesChanged: (cb: () => void) => () => void
+    /** One note's content changed on disk (Epic 11); payload is the note path. */
+    onNoteChanged: (cb: (path: string) => void) => () => void
     onConfirmClose: (cb: () => void) => () => void
+    /** Sticky-note windows (Epic 11). */
+    sticky: {
+      open: (path: string) => Promise<IpcResult<undefined>>
+      close: (path: string) => Promise<IpcResult<undefined>>
+    }
   }
 }

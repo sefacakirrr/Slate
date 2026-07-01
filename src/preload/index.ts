@@ -84,12 +84,23 @@ const api: Api = {
         ipcRenderer.removeListener('vault:filesChanged', listener)
       }
     },
+    onNoteChanged: (cb) => {
+      const listener = (_event: unknown, path: string) => cb(path)
+      ipcRenderer.on('vault:noteChanged', listener)
+      return () => {
+        ipcRenderer.removeListener('vault:noteChanged', listener)
+      }
+    },
     onConfirmClose: (cb) => {
       const listener = () => cb()
       ipcRenderer.on('window:confirmClose', listener)
       return () => {
         ipcRenderer.removeListener('window:confirmClose', listener)
       }
+    },
+    sticky: {
+      open: (path) => invoke('window:sticky:open', path),
+      close: (path) => invoke('window:sticky:close', path),
     },
   },
 }

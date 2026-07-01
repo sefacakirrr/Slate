@@ -2,7 +2,7 @@
 
 > **Project**: Slate
 > **Created**: 2026-05-18
-> **Last updated**: 2026-07-01
+> **Last updated**: 2026-07-01 (sticky notes shipped in v0.1.9)
 
 ---
 
@@ -35,6 +35,7 @@
 | **Settings & UX Polish** | SettingsService, settings UI, dark/light/system theme, vault config, custom hotkey binding | COMPLETE (basic) | E8 (done — settings panel + theme toggle; custom hotkey rebind → M3) | M2 (dark mode + vault config) → M3 (full polish) |
 | **Packaging & Distribution** | electron-builder NSIS installer, native module rebuild docs, version handling | NOT STARTED | — | M3 |
 | **Note Encryption / Locking** | EncryptionService (scrypt + AES-256-GCM), vault-password unlock/lock flow, per-note lock/unlock UI, encrypted on-disk format, index exclusion of locked notes | COMPLETE | E10 (done) | M3+ |
+| **Desktop Sticky Notes** | Frameless always-on-top sticky windows per pinned note, WindowManager sticky lifecycle, pin/unpin UI, geometry + stuck-set persistence and restore-on-launch, near-live multi-window content sync | COMPLETE | E11 (done) | M3+ |
 
 **Status values**: NOT STARTED → IN PROGRESS → COMPLETE
 
@@ -55,6 +56,7 @@
 | E7 | epic | Capture & Shortcuts — WindowManager, ShortcutManager, Ctrl+Shift+N global hotkey, quick-capture popup (user-verified) | 2026-06-19 | Capture & Shortcuts |
 | E8 | epic | Settings UI & Theme — Settings panel, dark/light/system toggle, CM6 theme switching, vault path display (user-verified) | 2026-06-19 | Settings & UX Polish |
 | E10 | epic | Note Encryption — optional per-note at-rest encryption (scrypt + AES-256-GCM), single vault password in memory, `.md.enc` container, FTS index exclusion, lock/unlock UI (user-verified on macOS; Windows round-trip deferred). Shipped in v0.1.8 | 2026-07-01 | Note Encryption / Locking |
+| E11 | epic | Desktop Sticky Notes — frameless always-on-top sticky windows per pinned note, geometry persist/restore, pin UI, near-live multi-window sync (autosave + reload-if-not-dirty), tab-label extension hiding (user-verified on macOS; Windows deferred). Shipped in v0.1.9 | 2026-07-01 | Desktop Sticky Notes |
 
 Vision, TECHSTACK.md, ARCHITECTURE.md authored; Electron+React+Tailwind+CodeMirror scaffold built and verified end-to-end (`npm run build`, `npm run check`, `npm run typecheck` all green; `npm run dev` launches an empty shell). Pre-feature state.
 
@@ -66,7 +68,8 @@ Vision, TECHSTACK.md, ARCHITECTURE.md authored; Electron+React+Tailwind+CodeMirr
 
 PROJECT-VISION.md non-goals are encoded as architectural constraints (no sync, no plugins, no AI, no mobile/web). The architecture supports every Tier-1 capability listed in the vision.
 
-- **2026-07-01 — Optional per-note at-rest encryption added to scope** via `/project-revise`. This is a conscious, opt-in exception to the "all notes are portable plain markdown" success criterion — only notes the user explicitly locks are affected. It stays fully local (reinforces, not violates, "no cloud/sync"): scrypt + AES-256-GCM, single vault password held only in memory, no keychain, no recovery. Tracked as the **Note Encryption / Locking** stream (E10, planned).
+- **2026-07-01 — Optional per-note at-rest encryption added to scope** via `/project-revise`. This is a conscious, opt-in exception to the "all notes are portable plain markdown" success criterion — only notes the user explicitly locks are affected. It stays fully local (reinforces, not violates, "no cloud/sync"): scrypt + AES-256-GCM, single vault password held only in memory, no keychain, no recovery. Delivered as E10, shipped in v0.1.8.
+- **2026-07-01 — Optional desktop sticky notes added to scope** via `/project-revise`. A new, opt-in interaction: pin selected notes as frameless always-on-top windows floating *above* apps. The vault `.md` file stays the source of truth. Distinct from the "no notifications" non-goal (stickies are passive, never alert) and from desktop-embedded/wallpaper widgets (rejected — native Win32/macOS hacks). Cross-platform via Electron's own window APIs, no new dependency. Tracked as the **Desktop Sticky Notes** stream (E11, planned).
 
 ---
 
@@ -76,3 +79,4 @@ PROJECT-VISION.md non-goals are encoded as architectural constraints (no sync, n
 - **CodeMirror 6 WYSIWYG complexity.** Live-preview decorations are the single highest-risk piece of the editor work. Mitigation: start E2 with the simplest possible CM6 + markdown setup; add live-preview decorations as a second slice, not a prerequisite.
 - **Vision Tier-2 creep.** The vision explicitly defers backlinks, daily notes, templates, outlines. Risk: implementing one of them pre-emptively "while we're here." Mitigation: ROADMAP.md does not list any of those streams; if a Tier-2 feature gets added later, it must come via `/project-revise`.
 - **Encryption data loss & index leak (E10).** No password recovery means a forgotten vault password is permanent content loss; and locked notes left in the plaintext FTS index would leak their contents. Mitigation: unmistakable no-recovery warnings at lock time; treat index exclusion of locked notes as a hard security requirement with tests, not an optimization. Keep the crypto path standard and versioned (scrypt + AES-256-GCM).
+- **Sticky multi-window edit consistency (E11).** The same note open in the main window and a sticky (or two stickies) risks concurrent edits clobbering each other. Mitigation: the vault file is the single source of truth; stickies save through the normal `writeNote` path and reconcile via the existing `vault:filesChanged` event and the tab dirty/save model — no new sync layer. Cross-OS always-on-top quirks accepted as minor cosmetic differences rather than solved with native hacks.

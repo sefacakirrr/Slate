@@ -4,6 +4,7 @@ import { EmptyState } from '@renderer/components/EmptyState'
 import { QuickCapture } from '@renderer/components/QuickCapture'
 import { SearchPanel } from '@renderer/components/SearchPanel'
 import { Sidebar } from '@renderer/components/Sidebar'
+import { StickyNote } from '@renderer/components/StickyNote'
 import { TitleBar } from '@renderer/components/TitleBar'
 import { UnlockDialog } from '@renderer/components/UnlockDialog'
 import { useEncryptionStore } from '@renderer/stores/encryptionStore'
@@ -16,8 +17,13 @@ import { useHotkeys } from 'react-hotkeys-hook'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 
 export default function App() {
-  if (window.location.hash === '#/capture') {
+  const hash = window.location.hash
+  if (hash === '#/capture') {
     return <QuickCapture />
+  }
+  if (hash.startsWith('#/sticky/')) {
+    const notePath = decodeURIComponent(hash.slice('#/sticky/'.length))
+    return <StickyNote notePath={notePath} />
   }
   return <MainApp />
 }

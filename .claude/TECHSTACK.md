@@ -42,6 +42,16 @@ Considered:
 Notes are plain `.md` files in a user-chosen "vault" folder — portable, future-proof, survives Slate going away. A local SQLite database (via `better-sqlite3`) indexes content for full-text search and stores metadata (tags, recents, pins) without polluting the markdown.
 Considered: pure-JS search libraries (MiniSearch, Flexsearch) — viable for small libraries but slower at scale, and SQLite's SQL surface is valuable for compound queries (tag + folder + recency).
 
+## Desktop sticky notes (optional pinned windows)
+
+**Electron's own multi-window APIs. Zero new dependencies.**
+
+A sticky note is an additional frameless `BrowserWindow` (`frame: false`, `alwaysOnTop: true`, `setVisibleOnAllWorkspaces(true)`), rendering one vault note through the same renderer bundle via a route hash (the pattern the quick-capture window already uses). Position/size and the stuck-note set persist in `SettingsService` and restore on launch.
+
+Considered and rejected:
+- **Desktop-embedded / wallpaper-level widgets** (behind app windows, Rainmeter-style) — needs native Win32 `SetParent` into the `WorkerW`/`Progman` desktop layer and unsupported macOS window-level hacks. That means a native addon and per-OS fragility across OS updates — the opposite of the cross-platform, low-dependency goal. Sticky notes float *above* apps instead.
+- **A dedicated widget/overlay framework** — unnecessary; Electron windows already do everything the floating model needs.
+
 ## Encryption (optional per-note locking)
 
 **Node's built-in `crypto` — `scrypt` (KDF) + `AES-256-GCM` (cipher). Zero new dependencies.**

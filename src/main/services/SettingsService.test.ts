@@ -108,4 +108,48 @@ describe('SettingsService', () => {
       expect(raw).toContain(secret.verifier)
     })
   })
+
+  describe('stickies (Epic 11)', () => {
+    const bounds = { x: 10, y: 20, width: 320, height: 300 }
+
+    it('returns [] when none are set', async () => {
+      expect(await new SettingsService(filePath).getStickies()).toEqual([])
+    })
+
+    it('persists and reads back the sticky set across instances', async () => {
+      await new SettingsService(filePath).setStickies([{ path: 'a.md', bounds }])
+      expect(await new SettingsService(filePath).getStickies()).toEqual([{ path: 'a.md', bounds }])
+    })
+
+    it('updateStickyGeometry inserts a new sticky and updates an existing one', async () => {
+      const s = new SettingsService(filePath)
+      await s.updateStickyGeometry('a.md', bounds)
+      expect(await s.getStickies()).toEqual([{ path: 'a.md', bounds }])
+
+      const moved = { x: 99, y: 99, width: 400, height: 400 }
+      await s.updateStickyGeometry('a.md', moved)
+      expect(await new SettingsService(filePath).getStickies()).toEqual([
+        { path: 'a.md', bounds: moved },
+      ])
+    })
+
+    it('removeSticky drops one entry, leaving the rest', async () => {
+      const s = new SettingsService(filePath)
+      await s.setStickies([
+        { path: 'a.md', bounds },
+        { path: 'b.md', bounds },
+      ])
+      await s.removeSticky('a.md')
+      expect(await new SettingsService(filePath).getStickies()).toEqual([{ path: 'b.md', bounds }])
+    })
+
+    it('keeps stickies independent of vault path and workspace', async () => {
+      const s = new SettingsService(filePath)
+      await s.setVaultPath('C:/vault')
+      await s.setStickies([{ path: 'note.md', bounds }])
+      const reopened = new SettingsService(filePath)
+      expect(await reopened.getVaultPath()).toBe('C:/vault')
+      expect(await reopened.getStickies()).toEqual([{ path: 'note.md', bounds }])
+    })
+  })
 })
