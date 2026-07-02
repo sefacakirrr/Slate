@@ -21,6 +21,8 @@ const api: Api = {
     setWorkspace: (ws) => invoke('settings:setWorkspace', ws),
     getTheme: () => invoke('settings:getTheme'),
     setTheme: (theme) => invoke('settings:setTheme', theme),
+    getAutoSave: () => invoke('settings:getAutoSave'),
+    setAutoSave: (autoSave) => invoke('settings:setAutoSave', autoSave),
   },
   dialog: {
     pickFolder: () => invoke('dialog:pickFolder'),

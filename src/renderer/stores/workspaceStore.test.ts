@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useWorkspaceStore } from './workspaceStore'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { AUTO_SAVE_DEBOUNCE_MS, useWorkspaceStore } from './workspaceStore'
 
 /**
  * The store reaches the main process only through `@renderer/api`. We replace it
@@ -8,17 +8,21 @@ import { useWorkspaceStore } from './workspaceStore'
  * tabs, dirty math, save, close-prompt, persistence, restore — is all exercised
  * here; the CM6 view/state side lives in UAT.
  */
-const { readNote, writeNote, getWorkspace, setWorkspace } = vi.hoisted(() => ({
-  readNote: vi.fn(),
-  writeNote: vi.fn(),
-  getWorkspace: vi.fn(),
-  setWorkspace: vi.fn(),
-}))
+const { readNote, writeNote, getWorkspace, setWorkspace, getAutoSave, setAutoSave } = vi.hoisted(
+  () => ({
+    readNote: vi.fn(),
+    writeNote: vi.fn(),
+    getWorkspace: vi.fn(),
+    setWorkspace: vi.fn(),
+    getAutoSave: vi.fn(),
+    setAutoSave: vi.fn(),
+  }),
+)
 
 vi.mock('@renderer/api', () => ({
   api: {
     vault: { readNote, writeNote },
-    settings: { getWorkspace, setWorkspace },
+    settings: { getWorkspace, setWorkspace, getAutoSave, setAutoSave },
     tags: { list: vi.fn().mockResolvedValue({ ok: true, data: [] }) },
   },
 }))
@@ -36,11 +40,13 @@ function vaultWith(files: Record<string, string>): void {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  useWorkspaceStore.setState({ tabs: [], activeTabPath: null, pendingClose: null })
+  useWorkspaceStore.setState({ tabs: [], activeTabPath: null, pendingClose: null, autoSave: false })
   // Sensible defaults; individual tests override as needed.
   writeNote.mockResolvedValue(ok(undefined))
   setWorkspace.mockResolvedValue(ok(undefined))
   getWorkspace.mockResolvedValue(ok({ openTabs: [], activeTab: null }))
+  getAutoSave.mockResolvedValue(ok(true))
+  setAutoSave.mockResolvedValue(ok(undefined))
 })
 
 const store = () => useWorkspaceStore.getState()
@@ -352,6 +358,159 @@ describe('reset', () => {
     expect(store().tabs).toHaveLength(0)
     expect(store().activeTabPath).toBeNull()
     expect(setWorkspace).toHaveBeenLastCalledWith({ openTabs: [], activeTab: null })
+  })
+})
+
+describe('auto-save (Epic 13)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    useWorkspaceStore.setState({ autoSave: true })
+  })
+
+  afterEach(() => {
+    // Clear any pending debounce timers so they can't leak across tests.
+    useWorkspaceStore.getState().reset()
+    vi.useRealTimers()
+  })
+
+  it('saves a dirty tab after the debounce interval', async () => {
+    vaultWith({ 'a.md': 'A' })
+    await store().openTab('a.md')
+    store().setTabDraft('a.md', 'A edited')
+    expect(writeNote).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(AUTO_SAVE_DEBOUNCE_MS)
+
+    expect(writeNote).toHaveBeenCalledWith({ path: 'a.md', content: 'A edited' })
+    expect(store().tabs[0]).toMatchObject({ baseline: 'A edited', dirty: false })
+  })
+
+  it('debounces: rapid keystrokes produce a single write with the final text', async () => {
+    vaultWith({ 'a.md': 'A' })
+    await store().openTab('a.md')
+
+    store().setTabDraft('a.md', 'A e')
+    await vi.advanceTimersByTimeAsync(AUTO_SAVE_DEBOUNCE_MS - 100)
+    store().setTabDraft('a.md', 'A ed')
+    await vi.advanceTimersByTimeAsync(AUTO_SAVE_DEBOUNCE_MS - 100)
+    store().setTabDraft('a.md', 'A edited')
+    expect(writeNote).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(AUTO_SAVE_DEBOUNCE_MS)
+
+    expect(writeNote).toHaveBeenCalledTimes(1)
+    expect(writeNote).toHaveBeenCalledWith({ path: 'a.md', content: 'A edited' })
+  })
+
+  it('does not schedule saves while the toggle is off', async () => {
+    useWorkspaceStore.setState({ autoSave: false })
+    vaultWith({ 'a.md': 'A' })
+    await store().openTab('a.md')
+    store().setTabDraft('a.md', 'A edited')
+
+    await vi.advanceTimersByTimeAsync(AUTO_SAVE_DEBOUNCE_MS * 2)
+
+    expect(writeNote).not.toHaveBeenCalled()
+    expect(store().tabs[0].dirty).toBe(true)
+  })
+
+  it('turning the toggle off cancels a pending save', async () => {
+    vaultWith({ 'a.md': 'A' })
+    await store().openTab('a.md')
+    store().setTabDraft('a.md', 'A edited')
+
+    await store().setAutoSave(false)
+    await vi.advanceTimersByTimeAsync(AUTO_SAVE_DEBOUNCE_MS * 2)
+
+    expect(writeNote).not.toHaveBeenCalled()
+    expect(setAutoSave).toHaveBeenCalledWith(false)
+  })
+
+  it('cancels the pending save when the draft returns to baseline', async () => {
+    vaultWith({ 'a.md': 'A' })
+    await store().openTab('a.md')
+    store().setTabDraft('a.md', 'A edited')
+    store().setTabDraft('a.md', 'A')
+
+    await vi.advanceTimersByTimeAsync(AUTO_SAVE_DEBOUNCE_MS * 2)
+
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+
+  it('manual save flushes immediately and the stale timer does not double-write', async () => {
+    vaultWith({ 'a.md': 'A' })
+    await store().openTab('a.md')
+    store().setTabDraft('a.md', 'A edited')
+
+    await store().saveTab('a.md')
+    expect(writeNote).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(AUTO_SAVE_DEBOUNCE_MS * 2)
+    expect(writeNote).toHaveBeenCalledTimes(1)
+  })
+
+  it('closing a tab (discard) cancels its pending save', async () => {
+    vaultWith({ 'a.md': 'A' })
+    await store().openTab('a.md')
+    store().setTabDraft('a.md', 'A edited')
+    store().closeTab('a.md')
+    store().confirmCloseDiscard()
+
+    await vi.advanceTimersByTimeAsync(AUTO_SAVE_DEBOUNCE_MS * 2)
+
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+
+  it('external change while a save is pending: cancels the write and adopts disk content', async () => {
+    vaultWith({ 'a.md': 'A' })
+    await store().openTab('a.md')
+    store().setTabDraft('a.md', 'A local edit')
+
+    // The file changes on disk before the debounce fires.
+    vaultWith({ 'a.md': 'A external' })
+    const content = await store().reloadTab('a.md')
+
+    expect(content).toBe('A external')
+    expect(store().tabs[0]).toMatchObject({
+      baseline: 'A external',
+      draft: 'A external',
+      dirty: false,
+    })
+
+    await vi.advanceTimersByTimeAsync(AUTO_SAVE_DEBOUNCE_MS * 2)
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+
+  it('reloadTab still skips a dirty tab when no auto-save is pending', async () => {
+    useWorkspaceStore.setState({ autoSave: false })
+    vaultWith({ 'a.md': 'A' })
+    await store().openTab('a.md')
+    store().setTabDraft('a.md', 'A local edit')
+
+    vaultWith({ 'a.md': 'A external' })
+    const content = await store().reloadTab('a.md')
+
+    expect(content).toBeNull()
+    expect(store().tabs[0]).toMatchObject({ draft: 'A local edit', dirty: true })
+  })
+
+  it('rename re-keys the pending save to the new path', async () => {
+    vaultWith({ 'old.md': 'A' })
+    await store().openTab('old.md')
+    store().setTabDraft('old.md', 'A edited')
+
+    store().renameTab('old.md', 'new.md')
+    await vi.advanceTimersByTimeAsync(AUTO_SAVE_DEBOUNCE_MS)
+
+    expect(writeNote).toHaveBeenCalledWith({ path: 'new.md', content: 'A edited' })
+  })
+
+  it('loadAutoSave adopts the persisted value', async () => {
+    useWorkspaceStore.setState({ autoSave: false })
+    getAutoSave.mockResolvedValueOnce(ok(true))
+
+    await store().loadAutoSave()
+    expect(store().autoSave).toBe(true)
   })
 })
 

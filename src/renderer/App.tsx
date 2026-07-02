@@ -34,6 +34,7 @@ function MainApp() {
   const loadVaultPath = useVaultStore((s) => s.loadVaultPath)
   const loadFiles = useVaultStore((s) => s.loadFiles)
   const restoreWorkspace = useWorkspaceStore((s) => s.restoreWorkspace)
+  const loadAutoSave = useWorkspaceStore((s) => s.loadAutoSave)
   const tabs = useWorkspaceStore((s) => s.tabs)
   const pendingClose = useWorkspaceStore((s) => s.pendingClose)
   const confirmCloseSave = useWorkspaceStore((s) => s.confirmCloseSave)
@@ -48,7 +49,8 @@ function MainApp() {
     loadVaultPath()
     loadTheme()
     initEncryption()
-  }, [loadVaultPath, loadTheme, initEncryption])
+    void loadAutoSave()
+  }, [loadVaultPath, loadTheme, initEncryption, loadAutoSave])
 
   useEffect(() => {
     return window.api.window.onConfirmClose(() => {

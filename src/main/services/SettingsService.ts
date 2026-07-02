@@ -34,6 +34,8 @@ type SettingsData = {
   encryption: VaultSecret | null
   /** Pinned sticky notes with their window geometry (Epic 11). */
   stickies: StickyRecord[]
+  /** Auto-save the active note after a short debounce (Epic 13). */
+  autoSave: boolean
 }
 
 const DEFAULTS: SettingsData = {
@@ -42,6 +44,7 @@ const DEFAULTS: SettingsData = {
   theme: 'dark',
   encryption: null,
   stickies: [],
+  autoSave: true,
 }
 
 /**
@@ -161,6 +164,17 @@ export class SettingsService {
         ? [...stickies, { path, bounds }]
         : stickies.map((s) => (s.path === path ? { path, bounds } : s))
     await this.persist({ ...data, stickies: next })
+  }
+
+  /** Whether auto-save is enabled (Epic 13). Pre-existing settings files → default true. */
+  async getAutoSave(): Promise<boolean> {
+    const data = await this.load()
+    return data.autoSave ?? DEFAULTS.autoSave
+  }
+
+  async setAutoSave(autoSave: boolean): Promise<void> {
+    const data = await this.load()
+    await this.persist({ ...data, autoSave })
   }
 
   /** Removes one sticky from the persisted set (on close). */

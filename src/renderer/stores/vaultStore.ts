@@ -139,7 +139,11 @@ export const useVaultStore = create<VaultState>((set, get) => ({
 
   createFolder: async (path) => {
     const prevFolders = get().folderList
-    set({ folderList: [...prevFolders, path].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())) })
+    set({
+      folderList: [...prevFolders, path].sort((a, b) =>
+        a.toLowerCase().localeCompare(b.toLowerCase()),
+      ),
+    })
     const result = await api.vault.createFolder(path)
     if (!result.ok) {
       console.error(`createFolder failed: ${result.error}`)
@@ -157,11 +161,15 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     const prevFiles = fileList
     const prevFolders = folderList
     set({
-      fileList: sortPaths(fileList.map((p) => (p.startsWith(fromPrefix) ? toPrefix + p.slice(fromPrefix.length) : p))),
+      fileList: sortPaths(
+        fileList.map((p) => (p.startsWith(fromPrefix) ? toPrefix + p.slice(fromPrefix.length) : p)),
+      ),
       folderList: sortPaths([
         ...folderList.filter((p) => p !== from && !p.startsWith(fromPrefix)),
         to,
-        ...folderList.filter((p) => p.startsWith(fromPrefix)).map((p) => toPrefix + p.slice(fromPrefix.length)),
+        ...folderList
+          .filter((p) => p.startsWith(fromPrefix))
+          .map((p) => toPrefix + p.slice(fromPrefix.length)),
       ]),
     })
     const result = await api.vault.renameFolder({ from, to })

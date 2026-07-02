@@ -78,6 +78,11 @@ function buildHandlers(deps: Deps): HandlerMap {
       await deps.settings.setTheme(theme)
       return undefined
     },
+    'settings:getAutoSave': () => deps.settings.getAutoSave(),
+    'settings:setAutoSave': async (autoSave) => {
+      await deps.settings.setAutoSave(autoSave)
+      return undefined
+    },
     'dialog:pickFolder': async () => {
       const win = deps.getMainWindow()
       const result = win
@@ -370,6 +375,8 @@ export function registerIpcHandlers(ipc: IpcMain, deps: Deps): void {
   register(ipc, 'settings:setWorkspace', handlers['settings:setWorkspace'])
   register(ipc, 'settings:getTheme', handlers['settings:getTheme'])
   register(ipc, 'settings:setTheme', handlers['settings:setTheme'])
+  register(ipc, 'settings:getAutoSave', handlers['settings:getAutoSave'])
+  register(ipc, 'settings:setAutoSave', handlers['settings:setAutoSave'])
   register(ipc, 'dialog:pickFolder', handlers['dialog:pickFolder'])
   register(ipc, 'vault:listNotes', handlers['vault:listNotes'])
   register(ipc, 'vault:listDirs', handlers['vault:listDirs'])

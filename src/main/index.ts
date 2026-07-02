@@ -81,9 +81,9 @@ app.whenReady().then(async () => {
   // Check for updates silently; user gets a native notification when one is
   // ready and the new version installs on the next app restart.
   if (app.isPackaged) {
-    autoUpdater.checkForUpdatesAndNotify().catch((err) =>
-      console.error('auto-update check failed:', err),
-    )
+    autoUpdater
+      .checkForUpdatesAndNotify()
+      .catch((err) => console.error('auto-update check failed:', err))
   }
 
   shortcutManager.register('quick-capture', 'CmdOrCtrl+Shift+N', () => {

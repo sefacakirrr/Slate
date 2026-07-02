@@ -20,6 +20,16 @@ type WorkspaceState = {
   activeTabPath: string | null
   /** Path of a dirty tab the user is trying to close; null when no prompt is pending. */
   pendingClose: string | null
+  /**
+   * Auto-save toggle (Epic 13). Starts false so nothing fires before the
+   * persisted value loads; `loadAutoSave` sets the real value on startup.
+   */
+  autoSave: boolean
+
+  /** Reads the persisted auto-save setting on startup. */
+  loadAutoSave: () => Promise<void>
+  /** Toggles auto-save and persists it; turning it off cancels pending saves. */
+  setAutoSave: (enabled: boolean) => Promise<void>
 
   /** Opens a note in a tab (or focuses the existing tab) and activates it. */
   openTab: (path: string) => Promise<void>
@@ -63,10 +73,59 @@ function persistWorkspace(tabs: Tab[], activeTabPath: string | null): void {
   void api.settings.setWorkspace({ openTabs: tabs.map((t) => t.path), activeTab: activeTabPath })
 }
 
+/** Auto-save debounce interval (Epic 13). Not user-configurable in v1. */
+export const AUTO_SAVE_DEBOUNCE_MS = 1000
+
+/**
+ * Pending auto-save timers, keyed by tab path. Module-level (not store state)
+ * because timer handles are imperative bookkeeping, not renderable state — the
+ * visible signal is the tab's `dirty` flag clearing when a save lands.
+ */
+const pendingSaves = new Map<string, ReturnType<typeof setTimeout>>()
+
+function cancelPendingSave(path: string): void {
+  const timer = pendingSaves.get(path)
+  if (timer !== undefined) {
+    clearTimeout(timer)
+    pendingSaves.delete(path)
+  }
+}
+
+function cancelAllPendingSaves(): void {
+  for (const timer of pendingSaves.values()) clearTimeout(timer)
+  pendingSaves.clear()
+}
+
+/** (Re)arms the debounce for one tab; the trailing edge persists via saveTab. */
+function scheduleAutoSave(path: string): void {
+  cancelPendingSave(path)
+  const timer = setTimeout(() => {
+    pendingSaves.delete(path)
+    const s = useWorkspaceStore.getState()
+    // Re-check at fire time: the toggle may have flipped or the tab closed
+    // while the timer was pending.
+    if (!s.autoSave || !s.tabs.some((t) => t.path === path)) return
+    void s.saveTab(path)
+  }, AUTO_SAVE_DEBOUNCE_MS)
+  pendingSaves.set(path, timer)
+}
+
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   tabs: [],
   activeTabPath: null,
   pendingClose: null,
+  autoSave: false,
+
+  loadAutoSave: async () => {
+    const result = await api.settings.getAutoSave()
+    if (result.ok) set({ autoSave: result.data })
+  },
+
+  setAutoSave: async (enabled) => {
+    set({ autoSave: enabled })
+    if (!enabled) cancelAllPendingSaves()
+    await api.settings.setAutoSave(enabled)
+  },
 
   openTab: async (path) => {
     if (get().tabs.some((t) => t.path === path)) {
@@ -106,6 +165,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   removeTab: (path) => {
+    cancelPendingSave(path)
     const { tabs, activeTabPath, pendingClose } = get()
     const idx = tabs.findIndex((t) => t.path === path)
     if (idx === -1) return
@@ -123,12 +183,20 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     persistWorkspace(next, active)
   },
 
-  setTabDraft: (path, draft) =>
+  setTabDraft: (path, draft) => {
     set((s) => ({
       tabs: s.tabs.map((t) => (t.path === path ? { ...t, draft, dirty: draft !== t.baseline } : t)),
-    })),
+    }))
+    const tab = get().tabs.find((t) => t.path === path)
+    if (tab === undefined) return
+    if (get().autoSave && tab.dirty) scheduleAutoSave(path)
+    // Draft returned to baseline — nothing left to persist.
+    else cancelPendingSave(path)
+  },
 
   saveTab: async (path) => {
+    // A manual save (Ctrl+S) or a firing timer supersedes any pending debounce.
+    cancelPendingSave(path)
     const tab = get().tabs.find((t) => t.path === path)
     if (tab === undefined || !tab.dirty) return
 
@@ -186,27 +254,38 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   reset: () => {
+    cancelAllPendingSaves()
     set({ tabs: [], activeTabPath: null, pendingClose: null })
     persistWorkspace([], null)
   },
 
   renameTab: (oldPath, newPath) => {
     if (oldPath === newPath) return
+    // Re-key any pending auto-save so it fires against the new path.
+    const hadPending = pendingSaves.has(oldPath)
+    cancelPendingSave(oldPath)
     set((s) => ({
       tabs: s.tabs.map((t) => (t.path === oldPath ? { ...t, path: newPath } : t)),
       activeTabPath: s.activeTabPath === oldPath ? newPath : s.activeTabPath,
     }))
+    if (hadPending) scheduleAutoSave(newPath)
     persistWorkspace(get().tabs, get().activeTabPath)
   },
 
   reloadTab: async (path) => {
     const tab = get().tabs.find((t) => t.path === path)
-    // Not open, or dirty (never clobber unsaved edits) → skip.
-    if (tab === undefined || tab.dirty) return null
+    if (tab === undefined) return null
+    // Dirty with no auto-save pending (toggle off, or a save already in flight)
+    // → never clobber the user's unsaved edits.
+    if (tab.dirty && !pendingSaves.has(path)) return null
     const result = await api.vault.readNote(path)
     if (!result.ok) return null
-    // No-op when disk already matches (e.g. this window's own save).
+    // No-op when disk already matches the baseline — e.g. the echo of this
+    // window's own save. Keep any pending timer: the draft may still be ahead.
     if (result.data === tab.baseline) return null
+    // Genuine external change while a debounced write was pending: cancel the
+    // write and adopt disk content (Epic 13 — external change wins, no merge).
+    cancelPendingSave(path)
     const content = result.data
     set((s) => ({
       tabs: s.tabs.map((t) =>
@@ -220,6 +299,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const prefix = folderPath + '/'
     const { tabs, activeTabPath } = get()
     const next = tabs.filter((t) => t.path !== folderPath && !t.path.startsWith(prefix))
+    for (const t of tabs) {
+      if (!next.includes(t)) cancelPendingSave(t.path)
+    }
     const active = next.some((t) => t.path === activeTabPath)
       ? activeTabPath
       : (next[next.length - 1]?.path ?? null)

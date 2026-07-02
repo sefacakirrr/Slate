@@ -109,6 +109,27 @@ describe('SettingsService', () => {
     })
   })
 
+  describe('autoSave (Epic 13)', () => {
+    it('defaults to true when never set', async () => {
+      expect(await new SettingsService(filePath).getAutoSave()).toBe(true)
+    })
+
+    it('persists and reads back across instances', async () => {
+      await new SettingsService(filePath).setAutoSave(false)
+      expect(await new SettingsService(filePath).getAutoSave()).toBe(false)
+      await new SettingsService(filePath).setAutoSave(true)
+      expect(await new SettingsService(filePath).getAutoSave()).toBe(true)
+    })
+
+    it('defaults to true for a pre-existing settings file without the key', async () => {
+      const { writeFile } = await import('node:fs/promises')
+      await writeFile(filePath, JSON.stringify({ vaultPath: 'C:/v' }), 'utf-8')
+      const settings = new SettingsService(filePath)
+      expect(await settings.getVaultPath()).toBe('C:/v')
+      expect(await settings.getAutoSave()).toBe(true)
+    })
+  })
+
   describe('stickies (Epic 11)', () => {
     const bounds = { x: 10, y: 20, width: 320, height: 300 }
 

@@ -40,10 +40,15 @@ export function TitleBar() {
   }, [])
 
   return (
-    <div className="flex h-9 shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 light:border-slate-200 light:bg-white [-webkit-app-region:drag]" style={isMac ? { paddingLeft: '78px' } : { paddingLeft: '12px' }}>
+    <div
+      className="flex h-9 shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 light:border-slate-200 light:bg-white [-webkit-app-region:drag]"
+      style={isMac ? { paddingLeft: '78px' } : { paddingLeft: '12px' }}
+    >
       <div className="flex items-center gap-2 [-webkit-app-region:no-drag]">
         <Logo className="size-5 shrink-0 rounded-[5px]" />
-        <span className="text-sm font-semibold tracking-tight text-slate-100 light:text-slate-900">Slate</span>
+        <span className="text-sm font-semibold tracking-tight text-slate-100 light:text-slate-900">
+          Slate
+        </span>
       </div>
 
       {!isMac && (

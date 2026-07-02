@@ -26,6 +26,9 @@ export type IpcCommands = {
   }
   'settings:getTheme': { request: undefined; response: ThemeMode }
   'settings:setTheme': { request: ThemeMode; response: undefined }
+  /** Auto-save toggle (Epic 13). */
+  'settings:getAutoSave': { request: undefined; response: boolean }
+  'settings:setAutoSave': { request: boolean; response: undefined }
   'dialog:pickFolder': { request: undefined; response: string | null }
   'vault:listNotes': { request: undefined; response: string[] }
   'vault:listDirs': { request: undefined; response: string[] }
@@ -124,6 +127,8 @@ export type Api = {
     }) => Promise<IpcResult<undefined>>
     getTheme: () => Promise<IpcResult<ThemeMode>>
     setTheme: (theme: ThemeMode) => Promise<IpcResult<undefined>>
+    getAutoSave: () => Promise<IpcResult<boolean>>
+    setAutoSave: (autoSave: boolean) => Promise<IpcResult<undefined>>
   }
   dialog: {
     pickFolder: () => Promise<IpcResult<string | null>>

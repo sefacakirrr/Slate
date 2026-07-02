@@ -2,6 +2,7 @@ import { api } from '@renderer/api'
 import { useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { useThemeStore } from '@renderer/stores/themeStore'
 import { useVaultStore } from '@renderer/stores/vaultStore'
+import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import type { ThemeMode, UpdateState } from '@shared/types'
 import { useEffect, useState } from 'react'
 
@@ -23,6 +24,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const beginSetPassword = useEncryptionStore((s) => s.beginSetPassword)
   const beginUnlock = useEncryptionStore((s) => s.beginUnlock)
   const lockVaultNow = useEncryptionStore((s) => s.lockVaultNow)
+  const autoSave = useWorkspaceStore((s) => s.autoSave)
+  const setAutoSave = useWorkspaceStore((s) => s.setAutoSave)
   const [rebuilding, setRebuilding] = useState(false)
   const [rebuildStatus, setRebuildStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [update, setUpdate] = useState<UpdateState | { status: 'idle' }>({ status: 'idle' })
@@ -93,6 +96,40 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               className="shrink-0 rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
             >
               Change
+            </button>
+          </div>
+        </section>
+
+        {/* Editing (Epic 13) */}
+        <section>
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
+            Editing
+          </h3>
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <span className="text-xs text-slate-300 dark:text-slate-300 light:text-slate-700">
+                Auto-save
+              </span>
+              <p className="text-xs text-slate-500 light:text-slate-400">
+                Save the active note automatically after you stop typing. {mod}+S still saves
+                immediately.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoSave}
+              onClick={() => void setAutoSave(!autoSave)}
+              className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                autoSave ? 'bg-accent-600' : 'bg-slate-700 dark:bg-slate-700 light:bg-slate-300'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${
+                  autoSave ? 'translate-x-[18px]' : 'translate-x-0.5'
+                }`}
+              />
+              <span className="sr-only">Toggle auto-save</span>
             </button>
           </div>
         </section>
