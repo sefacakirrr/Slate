@@ -2,7 +2,7 @@
 
 ## Status: IN PROGRESS
 
-## Current phase: Phase 2 — IPC & UI (complete) → Phase 3 next
+## Current phase: Phase 3 — Tests & Edge Cases (complete) — awaiting review + UAT
 
 | # | Task | Status |
 |---|------|--------|
@@ -16,7 +16,7 @@
 | 8 | Import wizard modal | done |
 | 9 | First-run flow integration | done |
 | 10 | Settings panel entry | done |
-| 11 | Unit tests | pending |
+| 11 | Unit tests | done |
 | 12 | Filename conflict handling | pending |
 | 13 | Encoding detection | done |
 | 14 | Post-import reconcile trigger | done |
@@ -54,5 +54,17 @@
   dismissed via `dismissFirstRunImport`. No design system existed
   (`.claude/designs/` absent) — wizard follows ConfirmDialog/SettingsPanel
   visual conventions.
-- Remaining Phase 3 work: unit tests for importers + ImportService (tasks
-  12/13 code exists; tests still needed).
+## Notes (Phase 3)
+
+- `importers/importers.test.ts` (17 tests): txt rename edge cases, md
+  passthrough, html conversion (headings/emphasis/lists, script/style strip,
+  link+image preservation), Notion zip (id strip, flattening, collision
+  suffixes, asset extraction + link rewrite, external URLs untouched, CSV
+  skip, asset dedup).
+- `ImportService.test.ts` (12 tests, real temp dirs): recursive scan with
+  hidden/underscore exclusion, unsupported source rejection, subfolder/root
+  destinations, originals untouched, conflict `-1` suffix vs existing vault
+  note, progress events (0..total), html→md end-to-end, encoding (UTF-16 LE
+  BOM, Latin-1 fallback, UTF-8 BOM strip).
+- Suite: 282/282 green. Wizard UI + first-run flow need manual UAT
+  (dialogs/IPC not exercisable in the Node test env).
