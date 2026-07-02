@@ -181,10 +181,20 @@ class ImageWidget extends WidgetType {
     const wrapper = document.createElement('span')
     wrapper.className = 'cm-image-widget'
     wrapper.style.display = 'block'
-    wrapper.style.position = 'relative'
     wrapper.style.padding = '4px 0'
     wrapper.style.maxWidth = '100%'
     wrapper.contentEditable = 'false'
+
+    // Inline-block frame that shrink-wraps the image, so the resize handle and
+    // delete button sit on the image's own corners — not the editor's right
+    // edge. Without this, a shrunk image leaves the handle stranded at the far
+    // right with no room to drag rightward (growing back becomes impossible).
+    const frame = document.createElement('span')
+    frame.className = 'cm-image-frame'
+    frame.style.position = 'relative'
+    frame.style.display = 'inline-block'
+    frame.style.maxWidth = '100%'
+    frame.style.borderRadius = '6px'
 
     const img = document.createElement('img')
     img.src = this.src
@@ -196,8 +206,16 @@ class ImageWidget extends WidgetType {
     img.loading = 'lazy'
     if (this.width !== null) img.style.width = `${this.width}px`
 
+    const resizeHandle = createResizeHandle(view, img, {
+      path: this.path,
+      alt: this.alt,
+      from: this.from,
+      to: this.to,
+    })
+
     img.onerror = () => {
       img.style.display = 'none'
+      resizeHandle.style.display = 'none'
       const placeholder = document.createElement('span')
       placeholder.style.display = 'block'
       placeholder.style.padding = '8px 12px'
@@ -207,19 +225,13 @@ class ImageWidget extends WidgetType {
       placeholder.style.fontSize = '12px'
       placeholder.style.border = '1px dashed #475569'
       placeholder.textContent = `Image not found: ${this.alt || 'attachment'}`
-      wrapper.appendChild(placeholder)
+      frame.appendChild(placeholder)
     }
 
-    wrapper.appendChild(img)
-    wrapper.appendChild(createDeleteButton(view, this.from, this.to))
-    wrapper.appendChild(
-      createResizeHandle(view, img, {
-        path: this.path,
-        alt: this.alt,
-        from: this.from,
-        to: this.to,
-      }),
-    )
+    frame.appendChild(img)
+    frame.appendChild(createDeleteButton(view, this.from, this.to))
+    frame.appendChild(resizeHandle)
+    wrapper.appendChild(frame)
 
     // Double-click the image resets it to natural size (removes the width).
     img.addEventListener('dblclick', (e) => {
@@ -228,15 +240,24 @@ class ImageWidget extends WidgetType {
       replaceImageSource(view, this.from, this.to, serializeImage(this.path, this.alt, null))
     })
 
-    wrapper.addEventListener('mouseenter', () => {
-      for (const el of wrapper.querySelectorAll<HTMLElement>(
+    // Hover affordance on the image frame (not the full-width wrapper): a
+    // subtle outline signals the image is interactive, and the controls appear.
+    frame.addEventListener('mouseenter', () => {
+      frame.style.outline = '1px solid #8b5cf680'
+      frame.style.outlineOffset = '1px'
+      for (const el of frame.querySelectorAll<HTMLElement>(
         '.cm-widget-delete, .cm-image-resize',
       )) {
         el.style.opacity = '1'
       }
     })
-    wrapper.addEventListener('mouseleave', () => {
-      for (const el of wrapper.querySelectorAll<HTMLElement>(
+    frame.addEventListener('mouseleave', () => {
+      // Pointer capture keeps the drag alive outside the frame — don't hide
+      // the handle (or drop the outline) mid-drag.
+      if (frame.hasAttribute('data-dragging')) return
+      frame.style.outline = ''
+      frame.style.outlineOffset = ''
+      for (const el of frame.querySelectorAll<HTMLElement>(
         '.cm-widget-delete, .cm-image-resize',
       )) {
         el.style.opacity = '0'
@@ -281,17 +302,19 @@ function createResizeHandle(
   handle.className = 'cm-image-resize'
   handle.title = 'Drag to resize — double-click image to reset'
   handle.style.position = 'absolute'
-  handle.style.right = '-4px'
-  handle.style.bottom = '0px'
-  handle.style.width = '14px'
-  handle.style.height = '14px'
-  handle.style.borderRight = '3px solid #94a3b8'
-  handle.style.borderBottom = '3px solid #94a3b8'
-  handle.style.borderBottomRightRadius = '4px'
+  handle.style.right = '-7px'
+  handle.style.bottom = '-7px'
+  handle.style.width = '16px'
+  handle.style.height = '16px'
+  handle.style.borderRadius = '50%'
+  handle.style.backgroundColor = '#8b5cf6'
+  handle.style.border = '2px solid #f8fafc'
+  handle.style.boxShadow = '0 1px 4px rgba(0,0,0,0.5)'
   handle.style.cursor = 'nwse-resize'
   handle.style.opacity = '0'
   handle.style.transition = 'opacity 150ms'
   handle.style.touchAction = 'none'
+  handle.style.zIndex = '1'
 
   // Dimension tooltip shown while dragging.
   const badge = document.createElement('span')
@@ -318,6 +341,7 @@ function createResizeHandle(
     startX = e.clientX
     startWidth = img.getBoundingClientRect().width
     handle.setPointerCapture(e.pointerId)
+    handle.parentElement?.setAttribute('data-dragging', '')
     img.style.outline = '2px dashed #8b5cf6'
     img.style.outlineOffset = '2px'
     badge.style.display = 'block'
@@ -337,6 +361,7 @@ function createResizeHandle(
     if (!dragging) return
     dragging = false
     handle.releasePointerCapture(e.pointerId)
+    handle.parentElement?.removeAttribute('data-dragging')
     img.style.outline = ''
     img.style.outlineOffset = ''
     badge.style.display = 'none'
