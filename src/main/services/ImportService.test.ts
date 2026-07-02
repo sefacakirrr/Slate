@@ -79,7 +79,7 @@ describe('execute', () => {
     expect(result.skipped).toBe(0)
     const notes = await vault.listNotes()
     expect(notes).toHaveLength(2)
-    expect(notes.every((p) => p.startsWith(result.targetFolder + '/'))).toBe(true)
+    expect(notes.every((p) => p.startsWith(`${result.targetFolder}/`))).toBe(true)
     expect(notes.some((p) => p.endsWith('one.md'))).toBe(true)
     // Originals intact.
     expect(await readFile(join(sourceRoot, 'one.txt'), 'utf-8')).toBe('plain text')

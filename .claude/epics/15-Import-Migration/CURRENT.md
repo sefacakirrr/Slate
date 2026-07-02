@@ -1,8 +1,40 @@
 # Epic 15 — Import & Migration: Progress
 
-## Status: IN PROGRESS
+## Status: IMPLEMENTED — all phases reviewed & approved; manual UAT pending
 
-## Current phase: Phase 3 — Tests & Edge Cases (complete) — awaiting review + UAT
+## Review Log
+
+### 2026-07-02 — Phase Review (Phases 1–3 + scope extension): APPROVED
+
+**Tasks**: 14/14 genuinely complete (verified against code, not table status)
+**Quality**: typecheck 0 errors, tests 304/304, lint has only the 4
+pre-existing Sidebar a11y errors documented since Epic 13 (line numbers
+shifted by unrelated edits; no new issues from this epic)
+**Integration**: fully wired — `ImportService` constructed in
+`handlers.ts:373-374` (scan/execute), progress via `import:progress` event,
+`ImportWizard` mounted from SettingsPanel:355 and App.tsx:148 (first-run),
+`reconcileIndex` + `broadcastFilesChanged` run after every execute
+**Commits**: 32a7785, ebe1f91, 5d9d16e, cd08182 (scope extension), 8527e23
+
+**Evidence highlights**:
+- Task 12 (conflict handling) was implemented in Phase 1, not Phase 3 —
+  `resolveConflictFree` with per-basename `-1`/`-2` suffixes; tested against
+  an existing vault note (`note.md` kept, import lands as `note-1.md`).
+- Task 13 (encoding): UTF-16 LE/BE BOM, Latin-1 fallback, UTF-8 BOM strip —
+  each covered by a dedicated test with real bytes.
+- Scope extension (user UAT feedback): capability-based acceptance
+  (content-sniffing, binary blacklist), RTF importer, folder-structure
+  preservation, Desktop default in pickers — 39 importer/service tests total.
+- VISION success criteria: (1) 100-txt bulk import — engine loop is linear
+  copy, integration-tested; timing needs UAT. (2) HTML→clean markdown —
+  verified by turndown tests. (3) No data loss — originals never written,
+  asserted by test.
+
+**UAT ADVISORY** (dialogs/IPC not exercisable in tests):
+- Settings > Import → pick a mixed Desktop folder → preview counts, import,
+  verify folder structure under `Imported/` and search hits immediately.
+- Notion zip end-to-end with images.
+- First-run offer: pick a vault for the first time → wizard appears once.
 
 | # | Task | Status |
 |---|------|--------|
@@ -17,7 +49,7 @@
 | 9 | First-run flow integration | done |
 | 10 | Settings panel entry | done |
 | 11 | Unit tests | done |
-| 12 | Filename conflict handling | pending |
+| 12 | Filename conflict handling | done |
 | 13 | Encoding detection | done |
 | 14 | Post-import reconcile trigger | done |
 

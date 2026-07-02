@@ -128,7 +128,11 @@ function buildTree(
 function sortLevel(nodes: TreeNode[], folder: string, noteOrder: Record<string, string[]>): void {
   const custom = noteOrder[folder]
   const pos = new Map<string, number>()
-  if (custom) custom.forEach((name, i) => pos.set(name, i))
+  if (custom) {
+    custom.forEach((name, i) => {
+      pos.set(name, i)
+    })
+  }
 
   nodes.sort((a, b) => {
     const aDir = Boolean(a.children)
