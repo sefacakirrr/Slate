@@ -1,11 +1,13 @@
-import { readdir, readFile, stat } from 'node:fs/promises'
-import { basename, extname, join, resolve } from 'node:path'
-import type { VaultService } from './VaultService'
+import { open, readdir, readFile, stat } from 'node:fs/promises'
+import { basename, extname, join, relative, resolve } from 'node:path'
 import { htmlToNote } from './importers/html'
 import { mdToNote } from './importers/md'
 import { notionZipToNotes } from './importers/notion'
+import { rtfToNote } from './importers/rtf'
+import { textFileToNote } from './importers/text'
 import { txtToNote } from './importers/txt'
 import type { ImportedAttachment, ImportedNote } from './importers/types'
+import type { VaultService } from './VaultService'
 
 /** What kind of source a scan identified. */
 export type ImportSourceKind = 'folder' | 'notion-zip'
@@ -14,8 +16,9 @@ export type ImportScanResult = {
   kind: ImportSourceKind
   /** Display name of the source (folder or zip basename, no extension). */
   sourceName: string
-  /** Count per convertible format found. */
-  counts: { md: number; txt: number; html: number }
+  /** Count per convertible format found. `text` = generic plain-text files
+   *  (code, configs, logs, extension-less Sublime/scratch notes). */
+  counts: { md: number; txt: number; html: number; rtf: number; text: number }
   /** Total notes that would be imported. */
   total: number
 }
@@ -40,13 +43,127 @@ export type ImportProgress = {
   currentFile: string
 }
 
-const CONVERTIBLE = new Set(['.md', '.markdown', '.txt', '.html', '.htm'])
+type FileKind = 'md' | 'txt' | 'html' | 'rtf' | 'text'
+
+type ClassifiedFile = {
+  abs: string
+  /** Source-relative path (forward slashes) — preserved in the vault. */
+  rel: string
+  kind: FileKind
+}
+
+/** Formats with a dedicated converter, keyed by extension. */
+const KNOWN_KINDS: Record<string, FileKind> = {
+  '.md': 'md',
+  '.markdown': 'md',
+  '.txt': 'txt',
+  '.html': 'html',
+  '.htm': 'html',
+  '.rtf': 'rtf',
+}
+
+/**
+ * Extensions that are certainly not text notes — skipped without reading.
+ * Anything NOT listed here and not a known format gets content-sniffed, so
+ * code files, configs, logs, and extension-less notes all import.
+ */
+const BINARY_EXTENSIONS = new Set([
+  // images / video / audio
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.bmp',
+  '.avif',
+  '.ico',
+  '.icns',
+  '.tiff',
+  '.heic',
+  '.mp4',
+  '.mov',
+  '.avi',
+  '.mkv',
+  '.webm',
+  '.mp3',
+  '.wav',
+  '.flac',
+  '.ogg',
+  '.m4a',
+  '.aac',
+  // archives / packages
+  '.zip',
+  '.rar',
+  '.7z',
+  '.tar',
+  '.gz',
+  '.bz2',
+  '.xz',
+  '.dmg',
+  '.iso',
+  '.pkg',
+  '.deb',
+  '.rpm',
+  // executables / libraries / bytecode
+  '.exe',
+  '.dll',
+  '.so',
+  '.dylib',
+  '.app',
+  '.msi',
+  '.bin',
+  '.class',
+  '.pyc',
+  '.wasm',
+  // documents with binary containers
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.pages',
+  '.numbers',
+  '.key',
+  '.odt',
+  // data / misc
+  '.db',
+  '.sqlite',
+  '.sqlite3',
+  '.dat',
+  '.idx',
+  '.pack',
+  '.woff',
+  '.woff2',
+  '.ttf',
+  '.otf',
+  '.eot',
+  '.psd',
+  '.ai',
+  '.sketch',
+  '.fig',
+  '.blend',
+  '.o',
+  '.a',
+  '.lib',
+  '.pdb',
+  '.sublime-workspace',
+])
+
+/** Notes bigger than this are almost certainly not notes (logs, dumps). */
+const MAX_NOTE_SIZE = 10 * 1024 * 1024 // 10 MB
 
 /**
  * Import engine (Epic 15). Orchestrates scan → convert → copy-into-vault.
  * Originals are never modified — import is always a read + copy. Writes go
  * through VaultService (atomic, path-safe); attachments through the same
  * hash-named `_attachments/` convention as AttachmentService.
+ *
+ * Folder imports preserve the source's directory structure inside the vault.
+ * Files are accepted by capability, not extension: known formats (md, txt,
+ * html, rtf) convert with dedicated importers; every other file is
+ * content-sniffed and imported as plain text when it is readable text.
  *
  * Pure Node (no Electron imports) — constructed with a VaultService, so it is
  * unit-testable against a temp-dir vault like the other services.
@@ -71,19 +188,14 @@ export class ImportService {
       return {
         kind: 'notion-zip',
         sourceName: basename(sourcePath, '.zip'),
-        counts: { md: notes.length, txt: 0, html: 0 },
+        counts: { md: notes.length, txt: 0, html: 0, rtf: 0, text: 0 },
         total: notes.length,
       }
     }
 
-    const files = await this.collectConvertibleFiles(sourcePath)
-    const counts = { md: 0, txt: 0, html: 0 }
-    for (const f of files) {
-      const ext = extname(f).toLowerCase()
-      if (ext === '.md' || ext === '.markdown') counts.md++
-      else if (ext === '.txt') counts.txt++
-      else counts.html++
-    }
+    const files = await this.collectImportableFiles(sourcePath)
+    const counts = { md: 0, txt: 0, html: 0, rtf: 0, text: 0 }
+    for (const f of files) counts[f.kind]++
     return {
       kind: 'folder',
       sourceName: basename(sourcePath),
@@ -93,9 +205,9 @@ export class ImportService {
   }
 
   /**
-   * Runs the import. Converts every convertible file and writes it into the
-   * vault; name conflicts get `-1`, `-2`… suffixes (never overwrites).
-   * Reports progress per note through `onProgress`.
+   * Runs the import. Converts every importable file and writes it into the
+   * vault, mirroring the source's folder structure; name conflicts get `-1`,
+   * `-2`… suffixes (never overwrites). Reports progress per note.
    */
   async execute(
     opts: ImportExecuteOptions,
@@ -147,58 +259,122 @@ export class ImportService {
     return { imported, skipped, targetFolder }
   }
 
-  /** Converts every convertible file in a folder tree to a note. */
+  /** Converts every importable file in a folder tree, keeping its structure. */
   private async convertFolder(folderPath: string): Promise<ImportedNote[]> {
-    const files = await this.collectConvertibleFiles(folderPath)
+    const files = await this.collectImportableFiles(folderPath)
     const notes: ImportedNote[] = []
-    for (const abs of files) {
-      const name = basename(abs)
-      const ext = extname(abs).toLowerCase()
+    for (const f of files) {
+      const name = basename(f.rel)
+      const dir = f.rel.slice(0, f.rel.length - name.length) // '' or 'sub/dir/'
       try {
-        const content = await readTextFile(abs)
-        if (ext === '.txt') notes.push(txtToNote(name, content))
-        else if (ext === '.html' || ext === '.htm') notes.push(htmlToNote(name, content))
-        else notes.push(mdToNote(name, content))
+        const content = await readTextFile(f.abs)
+        const note = convertFile(f.kind, name, content)
+        notes.push({ name: `${dir}${note.name}`, content: note.content })
       } catch {
-        // Unreadable file — skip; execute() reports it via the skipped count
-        // only when writing fails, so pre-read failures just drop silently
-        // from the preview-consistent set. Acceptable: scan showed the same set.
+        // Unreadable file — drop it; scan showed the same set so counts stay
+        // consistent for anything readable.
       }
     }
     return notes
   }
 
-  /** Recursively lists absolute paths of convertible files, skipping hidden/underscore dirs. */
-  private async collectConvertibleFiles(folderPath: string): Promise<string[]> {
+  /**
+   * Recursively classifies importable files, skipping hidden/underscore dirs.
+   * Known formats classify by extension; unknown extensions (and none at all)
+   * are content-sniffed and imported as generic text when readable.
+   */
+  private async collectImportableFiles(folderPath: string): Promise<ClassifiedFile[]> {
     const root = resolve(folderPath)
     const entries = await readdir(root, { withFileTypes: true, recursive: true })
-    const files: string[] = []
+    const files: ClassifiedFile[] = []
     for (const entry of entries) {
       if (!entry.isFile()) continue
-      const segments = join(entry.parentPath, entry.name).slice(root.length).split(/[\\/]/)
-      if (segments.some((seg) => seg.startsWith('.') || seg.startsWith('_'))) continue
-      if (!CONVERTIBLE.has(extname(entry.name).toLowerCase())) continue
-      files.push(join(entry.parentPath, entry.name))
+      const abs = join(entry.parentPath, entry.name)
+      const rel = relative(root, abs).split(/[\\/]/).join('/')
+      if (rel.split('/').some((seg) => seg.startsWith('.') || seg.startsWith('_'))) continue
+
+      const ext = extname(entry.name).toLowerCase()
+      const known = KNOWN_KINDS[ext]
+      if (known !== undefined) {
+        files.push({ abs, rel, kind: known })
+        continue
+      }
+      if (BINARY_EXTENSIONS.has(ext)) continue
+      if (await isReadableText(abs)) files.push({ abs, rel, kind: 'text' })
     }
-    files.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    files.sort((a, b) => a.rel.toLowerCase().localeCompare(b.rel.toLowerCase()))
     return files
   }
 
   /**
    * Produces a vault-relative target path that doesn't collide with existing
    * notes or earlier files in this batch: `name.md`, `name-1.md`, `name-2.md`…
+   * `name` may contain directories (preserved structure) — the suffix is
+   * applied to the basename only.
    */
   private resolveConflictFree(folder: string, name: string, taken: Set<string>): string {
-    const dot = name.lastIndexOf('.')
-    const base = dot === -1 ? name : name.slice(0, dot)
-    const ext = dot === -1 ? '.md' : name.slice(dot)
-    const prefix = folder === '' ? '' : `${folder}/`
+    const slash = name.lastIndexOf('/')
+    const dir = slash === -1 ? '' : name.slice(0, slash + 1)
+    const file = slash === -1 ? name : name.slice(slash + 1)
+    const dot = file.lastIndexOf('.')
+    const base = dot === -1 ? file : file.slice(0, dot)
+    const ext = dot === -1 ? '.md' : file.slice(dot)
+    const prefix = folder === '' ? dir : `${folder}/${dir}`
 
     let candidate = `${prefix}${base}${ext}`
     for (let i = 1; taken.has(candidate.toLowerCase()); i++) {
       candidate = `${prefix}${base}-${i}${ext}`
     }
     return candidate
+  }
+}
+
+/** Routes a classified file through its converter. */
+function convertFile(kind: FileKind, name: string, content: string): ImportedNote {
+  switch (kind) {
+    case 'md':
+      return mdToNote(name, content)
+    case 'txt':
+      return txtToNote(name, content)
+    case 'html':
+      return htmlToNote(name, content)
+    case 'rtf':
+      return rtfToNote(name, content)
+    case 'text':
+      return textFileToNote(name, content)
+  }
+}
+
+/**
+ * Content sniff: reads the first 8 KB and decides whether the file is
+ * readable text. Null bytes or a high control-character ratio mean binary.
+ * Empty files count as text (an empty note is valid). Oversized files are
+ * rejected — a >10 MB "note" is a log or a dump, not a note.
+ */
+async function isReadableText(absPath: string): Promise<boolean> {
+  const s = await stat(absPath)
+  if (s.size > MAX_NOTE_SIZE) return false
+  if (s.size === 0) return true
+
+  const handle = await open(absPath, 'r')
+  try {
+    const sample = Buffer.alloc(Math.min(8192, s.size))
+    await handle.read(sample, 0, sample.length, 0)
+
+    // UTF-16 BOM → definitely text.
+    if (sample.length >= 2) {
+      if ((sample[0] === 0xff && sample[1] === 0xfe) || (sample[0] === 0xfe && sample[1] === 0xff))
+        return true
+    }
+
+    let suspicious = 0
+    for (const byte of sample) {
+      if (byte === 0) return false
+      if (byte < 32 && byte !== 9 && byte !== 10 && byte !== 13) suspicious++
+    }
+    return suspicious / sample.length < 0.02
+  } finally {
+    await handle.close()
   }
 }
 

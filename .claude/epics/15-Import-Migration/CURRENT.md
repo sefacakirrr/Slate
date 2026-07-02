@@ -68,3 +68,27 @@
   BOM, Latin-1 fallback, UTF-8 BOM strip).
 - Suite: 282/282 green. Wizard UI + first-run flow need manual UAT
   (dialogs/IPC not exercisable in the Node test env).
+
+## Scope extension (user feedback, 2026-07-02)
+
+User UAT feedback: extension-whitelist import was too narrow — Sublime Text
+scratch files (extension-less), code/config/log files, and Mac RTF notes
+could not be imported, and flattening lost the user's folder organization.
+
+- **Capability-based acceptance**: known formats (md/markdown, txt, html/htm,
+  rtf) route to dedicated importers; every other file is content-sniffed
+  (first 8 KB: null bytes / control-char ratio) and imported as plain text
+  when readable. A binary-extension blacklist (media, archives, executables,
+  office docs) skips obvious non-notes without reading. >10 MB files skipped.
+- **Generic text importer** (`importers/text.ts`): appends `.md` to the FULL
+  name (`app.js` → `app.js.md`) so source type stays visible and siblings
+  (`app.js`/`app.py`) can't collide.
+- **RTF importer** (`importers/rtf.ts`): hand-rolled RTF→text (no new dep) —
+  destination-group skipping (fonttbl/colortbl/info/pict…), \par/\line/\tab,
+  \'hh cp1252 hex escapes, \uN unicode words. Covers TextEdit/WordPad notes.
+- **Folder structure preserved**: source-relative dirs are mirrored in the
+  vault (`work/projects/plan.md` → `Imported/<src>/work/projects/plan.md`);
+  conflict suffix applies to the basename only.
+- **Picker default**: import dialogs open at the user's Desktop.
+- Tests: 295/295 (13 new — sniffing, structure preservation, code files,
+  RTF conversion incl. Turkish chars, binary skip).

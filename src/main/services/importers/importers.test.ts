@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { htmlToNote } from './html'
 import { mdToNote } from './md'
 import { notionZipToNotes } from './notion'
+import { rtfToNote, rtfToText } from './rtf'
+import { textFileToNote } from './text'
 import { txtToNote } from './txt'
 
 describe('txtToNote', () => {
@@ -30,7 +32,8 @@ describe('mdToNote', () => {
 
 describe('htmlToNote', () => {
   it('converts headings, emphasis and lists to markdown', () => {
-    const html = '<h1>Title</h1><p>Hello <b>bold</b> and <i>italic</i></p><ul><li>a</li><li>b</li></ul>'
+    const html =
+      '<h1>Title</h1><p>Hello <b>bold</b> and <i>italic</i></p><ul><li>a</li><li>b</li></ul>'
     const note = htmlToNote('note.html', html)
     expect(note.name).toBe('note.md')
     expect(note.content).toContain('# Title')
@@ -49,13 +52,62 @@ describe('htmlToNote', () => {
   })
 
   it('preserves links and images', () => {
-    const note = htmlToNote('n.html', '<p><a href="https://x.dev">site</a> <img src="pic.png" alt="p"></p>')
+    const note = htmlToNote(
+      'n.html',
+      '<p><a href="https://x.dev">site</a> <img src="pic.png" alt="p"></p>',
+    )
     expect(note.content).toContain('[site](https://x.dev)')
     expect(note.content).toContain('![p](pic.png)')
   })
 
   it('handles .htm extension', () => {
     expect(htmlToNote('page.htm', '<p>x</p>').name).toBe('page.md')
+  })
+})
+
+describe('textFileToNote', () => {
+  it('appends .md to the full original name', () => {
+    expect(textFileToNote('script.py', 'x').name).toBe('script.py.md')
+    expect(textFileToNote('TODO', 'x').name).toBe('TODO.md')
+  })
+
+  it('keeps siblings distinct after conversion', () => {
+    expect(textFileToNote('app.js', '').name).not.toBe(textFileToNote('app.py', '').name)
+  })
+})
+
+describe('rtfToText', () => {
+  it('extracts text and paragraph breaks, dropping formatting', () => {
+    const rtf = '{\\rtf1\\ansi Hello \\b bold\\b0  text\\par next paragraph}'
+    expect(rtfToText(rtf)).toBe('Hello bold text\nnext paragraph')
+  })
+
+  it('skips font/color/metadata tables', () => {
+    const rtf =
+      '{\\rtf1{\\fonttbl{\\f0\\fswiss Helvetica;}}{\\colortbl;\\red255\\green0\\blue0;}{\\info{\\author X}}Body}'
+    expect(rtfToText(rtf)).toBe('Body')
+  })
+
+  it('decodes hex escapes and unicode control words', () => {
+    // \'e7 = ç (cp1252), \u252 = ü
+    expect(rtfToText("{\\rtf1 \\'e7ay}")).toBe('çay')
+    expect(rtfToText('{\\rtf1 g\\u252?zel}')).toBe('güzel')
+  })
+
+  it('unescapes literal braces and backslashes', () => {
+    expect(rtfToText('{\\rtf1 a\\{b\\}c\\\\d}')).toBe('a{b}c\\d')
+  })
+
+  it('ignores raw newlines in the rtf source', () => {
+    expect(rtfToText('{\\rtf1 one\ntwo\\par three}')).toBe('onetwo\nthree')
+  })
+})
+
+describe('rtfToNote', () => {
+  it('renames .rtf to .md', () => {
+    const note = rtfToNote('Meeting Notes.rtf', '{\\rtf1 content}')
+    expect(note.name).toBe('Meeting Notes.md')
+    expect(note.content).toBe('content\n')
   })
 })
 

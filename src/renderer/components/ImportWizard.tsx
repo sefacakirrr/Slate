@@ -100,7 +100,8 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
               <span>
                 <span className="block text-sm font-medium text-slate-200">Folder of notes</span>
                 <span className="block text-xs text-slate-500">
-                  .md, .txt, or .html files (Apple Notes export) — subfolders included
+                  Any text files — Markdown, .txt, HTML, RTF, code, extension-less notes.
+                  Subfolders are kept.
                 </span>
               </span>
             </button>
@@ -265,6 +266,8 @@ function formatCounts(scan: ImportScanInfo): string {
   if (scan.counts.md > 0) parts.push(`${scan.counts.md} markdown`)
   if (scan.counts.txt > 0) parts.push(`${scan.counts.txt} text`)
   if (scan.counts.html > 0) parts.push(`${scan.counts.html} HTML`)
+  if (scan.counts.rtf > 0) parts.push(`${scan.counts.rtf} RTF`)
+  if (scan.counts.text > 0) parts.push(`${scan.counts.text} other plain-text`)
   return parts.length > 0 ? ` (${parts.join(', ')}).` : '.'
 }
 

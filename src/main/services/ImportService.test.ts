@@ -23,17 +23,28 @@ afterEach(async () => {
 })
 
 describe('scan', () => {
-  it('counts md, txt and html files recursively', async () => {
+  it('counts known formats recursively', async () => {
     await writeFile(join(sourceRoot, 'a.md'), '# a')
     await writeFile(join(sourceRoot, 'b.txt'), 'b')
     await mkdir(join(sourceRoot, 'sub'))
     await writeFile(join(sourceRoot, 'sub', 'c.html'), '<p>c</p>')
+    await writeFile(join(sourceRoot, 'd.rtf'), '{\\rtf1 hi}')
     await writeFile(join(sourceRoot, 'skip.pdf'), 'binary')
 
     const scan = await importer.scan(sourceRoot)
     expect(scan.kind).toBe('folder')
-    expect(scan.counts).toEqual({ md: 1, txt: 1, html: 1 })
-    expect(scan.total).toBe(3)
+    expect(scan.counts).toEqual({ md: 1, txt: 1, html: 1, rtf: 1, text: 0 })
+    expect(scan.total).toBe(4)
+  })
+
+  it('accepts unknown-extension and extension-less files when they are text', async () => {
+    await writeFile(join(sourceRoot, 'script.py'), 'print("hi")')
+    await writeFile(join(sourceRoot, 'TODO'), 'buy milk')
+    await writeFile(join(sourceRoot, 'binary.unknownext'), Buffer.from([0, 1, 2, 0, 255, 0, 3]))
+
+    const scan = await importer.scan(sourceRoot)
+    expect(scan.counts.text).toBe(2)
+    expect(scan.total).toBe(2)
   })
 
   it('skips hidden and underscore directories', async () => {
@@ -109,6 +120,51 @@ describe('execute', () => {
     const content = await vault.readNote('page.md')
     expect(content).toContain('# Hi')
     expect(content).toContain('**bold**')
+  })
+
+  it('preserves the source folder structure in the vault', async () => {
+    await mkdir(join(sourceRoot, 'work', 'projects'), { recursive: true })
+    await writeFile(join(sourceRoot, 'root.md'), 'root')
+    await writeFile(join(sourceRoot, 'work', 'notes.txt'), 'work notes')
+    await writeFile(join(sourceRoot, 'work', 'projects', 'plan.md'), 'plan')
+
+    const result = await importer.execute({
+      sourcePath: sourceRoot,
+      destination: 'imported-subfolder',
+    })
+    const notes = await vault.listNotes()
+    const t = result.targetFolder
+    expect(notes).toContain(`${t}/root.md`)
+    expect(notes).toContain(`${t}/work/notes.md`)
+    expect(notes).toContain(`${t}/work/projects/plan.md`)
+  })
+
+  it('imports code and extension-less files as .md-suffixed notes', async () => {
+    await writeFile(join(sourceRoot, 'script.py'), 'print("hi")')
+    await writeFile(join(sourceRoot, 'TODO'), 'buy milk')
+
+    await importer.execute({ sourcePath: sourceRoot, destination: 'root' })
+    expect(await vault.readNote('script.py.md')).toBe('print("hi")')
+    expect(await vault.readNote('TODO.md')).toBe('buy milk')
+  })
+
+  it('converts rtf files to plain-text notes', async () => {
+    const rtf =
+      '{\\rtf1\\ansi{\\fonttbl{\\f0 Helvetica;}}\\f0\\fs24 Hello \\b bold\\b0  world\\par second line}'
+    await writeFile(join(sourceRoot, 'note.rtf'), rtf)
+    await importer.execute({ sourcePath: sourceRoot, destination: 'root' })
+    const content = await vault.readNote('note.md')
+    expect(content).toContain('Hello bold world')
+    expect(content).toContain('second line')
+    expect(content).not.toContain('Helvetica')
+  })
+
+  it('skips binary files without importing them', async () => {
+    await writeFile(join(sourceRoot, 'photo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+    await writeFile(join(sourceRoot, 'real.md'), 'x')
+    const result = await importer.execute({ sourcePath: sourceRoot, destination: 'root' })
+    expect(result.imported).toBe(1)
+    expect(await vault.listNotes()).toEqual(['real.md'])
   })
 })
 

@@ -54,7 +54,8 @@ export type UpdateState = {
 export type ImportScanInfo = {
   kind: 'folder' | 'notion-zip'
   sourceName: string
-  counts: { md: number; txt: number; html: number }
+  /** `text` = generic plain-text files (code, configs, extension-less notes). */
+  counts: { md: number; txt: number; html: number; rtf: number; text: number }
   total: number
 }
 

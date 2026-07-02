@@ -1,6 +1,13 @@
 import { resolve } from 'node:path'
 import type { IpcChannel, IpcRequest, IpcResponse, IpcResult } from '@shared/ipc'
-import { type BrowserWindow, dialog, type IpcMain, type IpcMainInvokeEvent, shell } from 'electron'
+import {
+  app,
+  type BrowserWindow,
+  dialog,
+  type IpcMain,
+  type IpcMainInvokeEvent,
+  shell,
+} from 'electron'
 import type { AttachmentService } from '../services/AttachmentService'
 import type { EncryptionService } from '../services/EncryptionService'
 import { ImportService } from '../services/ImportService'
@@ -342,11 +349,14 @@ function buildHandlers(deps: Deps): HandlerMap {
     'window:isMaximized': () => deps.getMainWindow()?.isMaximized() ?? false,
     'import:pickSource': async (req) => {
       const win = deps.getMainWindow()
+      // Start where people actually keep loose notes (Desktop), not the cwd.
+      const defaultPath = app.getPath('desktop')
       const options: Electron.OpenDialogOptions =
         req.kind === 'folder'
-          ? { properties: ['openDirectory'] }
+          ? { properties: ['openDirectory'], defaultPath }
           : {
               properties: ['openFile'],
+              defaultPath,
               filters: [{ name: 'Notion export', extensions: ['zip'] }],
             }
       const result = win
