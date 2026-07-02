@@ -21,6 +21,8 @@ function isImagePath(path: string): boolean {
 const IMAGE_RE = /!\[([^\]]*)\]\(([^)]+)\)/g
 // Matches [name](path) for file links (non-image)
 const FILE_LINK_RE = /\[([^\]]+)\]\((_attachments\/[^)]+)\)/g
+// Matches <img ... /> written by the resize feature (Epic 14) or by hand.
+const HTML_IMG_RE = /<img\s+([^>]*?)\/?>/g
 
 type LinkMatch = {
   from: number
@@ -28,9 +30,35 @@ type LinkMatch = {
   name: string
   path: string
   isImage: boolean
+  /** Explicit display width in px (Epic 14), or null for natural size. */
+  width: number | null
 }
 
-function findAttachmentLinks(doc: string): LinkMatch[] {
+/** Pulls one double-quoted attribute value out of an <img> attribute string. */
+function attrValue(attrs: string, name: string): string | null {
+  const m = new RegExp(`${name}="([^"]*)"`).exec(attrs)
+  return m === null ? null : m[1]
+}
+
+function escapeAttr(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+}
+
+function unescapeAttr(value: string): string {
+  return value.replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+}
+
+/**
+ * The persisted source for an image (Epic 14): plain markdown at natural size,
+ * an HTML <img> once an explicit width is set — universally rendered and
+ * unambiguous. Resetting (width null) returns to markdown syntax.
+ */
+export function serializeImage(path: string, alt: string, width: number | null): string {
+  if (width === null) return `![${alt}](${path})`
+  return `<img src="${escapeAttr(path)}" alt="${escapeAttr(alt)}" width="${Math.round(width)}" />`
+}
+
+export function findAttachmentLinks(doc: string): LinkMatch[] {
   const results: LinkMatch[] = []
 
   const fenceRanges: { start: number; end: number }[] = []
@@ -62,6 +90,26 @@ function findAttachmentLinks(doc: string): LinkMatch[] {
       name: m[1],
       path: m[2],
       isImage: true,
+      width: null,
+    })
+  }
+
+  // Find HTML <img> tags (Epic 14 resize persistence format)
+  for (const m of doc.matchAll(HTML_IMG_RE)) {
+    const pos = m.index ?? 0
+    if (isExcluded(pos)) continue
+    const src = attrValue(m[1], 'src')
+    if (src === null || !isImagePath(src)) continue
+    const widthRaw = attrValue(m[1], 'width')
+    const width = widthRaw === null ? null : Number.parseInt(widthRaw, 10)
+
+    results.push({
+      from: pos,
+      to: pos + m[0].length,
+      name: unescapeAttr(attrValue(m[1], 'alt') ?? ''),
+      path: unescapeAttr(src),
+      isImage: true,
+      width: width !== null && Number.isFinite(width) && width > 0 ? width : null,
     })
   }
 
@@ -79,6 +127,7 @@ function findAttachmentLinks(doc: string): LinkMatch[] {
       name: m[1],
       path: m[2],
       isImage: false,
+      width: null,
     })
   }
 
@@ -96,22 +145,36 @@ function getFileExtension(path: string): string {
   return path.slice(dot + 1).toLowerCase()
 }
 
+/** Resize constraints (Epic 14): floor in px; ceiling is the editor width. */
+const MIN_IMAGE_WIDTH = 80
+
 class ImageWidget extends WidgetType {
   private readonly src: string
   private readonly alt: string
+  private readonly path: string
+  private readonly width: number | null
   private readonly from: number
   private readonly to: number
 
-  constructor(src: string, alt: string, from: number, to: number) {
+  constructor(
+    src: string,
+    alt: string,
+    path: string,
+    width: number | null,
+    from: number,
+    to: number,
+  ) {
     super()
     this.src = src
     this.alt = alt
+    this.path = path
+    this.width = width
     this.from = from
     this.to = to
   }
 
   eq(other: ImageWidget): boolean {
-    return this.src === other.src && this.from === other.from
+    return this.src === other.src && this.from === other.from && this.width === other.width
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -131,6 +194,7 @@ class ImageWidget extends WidgetType {
     img.style.borderRadius = '6px'
     img.style.display = 'block'
     img.loading = 'lazy'
+    if (this.width !== null) img.style.width = `${this.width}px`
 
     img.onerror = () => {
       img.style.display = 'none'
@@ -148,14 +212,35 @@ class ImageWidget extends WidgetType {
 
     wrapper.appendChild(img)
     wrapper.appendChild(createDeleteButton(view, this.from, this.to))
+    wrapper.appendChild(
+      createResizeHandle(view, img, {
+        path: this.path,
+        alt: this.alt,
+        from: this.from,
+        to: this.to,
+      }),
+    )
+
+    // Double-click the image resets it to natural size (removes the width).
+    img.addEventListener('dblclick', (e) => {
+      e.preventDefault()
+      if (this.width === null) return
+      replaceImageSource(view, this.from, this.to, serializeImage(this.path, this.alt, null))
+    })
 
     wrapper.addEventListener('mouseenter', () => {
-      const btn = wrapper.querySelector('.cm-widget-delete') as HTMLElement
-      if (btn) btn.style.opacity = '1'
+      for (const el of wrapper.querySelectorAll<HTMLElement>(
+        '.cm-widget-delete, .cm-image-resize',
+      )) {
+        el.style.opacity = '1'
+      }
     })
     wrapper.addEventListener('mouseleave', () => {
-      const btn = wrapper.querySelector('.cm-widget-delete') as HTMLElement
-      if (btn) btn.style.opacity = '0'
+      for (const el of wrapper.querySelectorAll<HTMLElement>(
+        '.cm-widget-delete, .cm-image-resize',
+      )) {
+        el.style.opacity = '0'
+      }
     })
 
     return wrapper
@@ -164,6 +249,118 @@ class ImageWidget extends WidgetType {
   ignoreEvent(event: Event): boolean {
     return event.type !== 'mousedown'
   }
+}
+
+/**
+ * Replaces the widget's source range with new image syntax. Positions come from
+ * the render pass; decorations rebuild on every doc change (same contract the
+ * delete button relies on), so they are current. Guard against a stale range
+ * anyway rather than corrupting unrelated text.
+ */
+function replaceImageSource(view: EditorView, from: number, to: number, insert: string): void {
+  const docLen = view.state.doc.length
+  if (from > docLen || to > docLen) return
+  view.dispatch({
+    changes: { from, to, insert },
+    // A resize is one user action: a single transaction, so one Ctrl+Z reverts it.
+    userEvent: 'input.resize-image',
+  })
+}
+
+/**
+ * Bottom-right drag handle (Epic 14). Pointer events with capture — the drag
+ * continues even when the pointer leaves the editor. Aspect ratio is implicit:
+ * only width is set, height stays auto.
+ */
+function createResizeHandle(
+  view: EditorView,
+  img: HTMLImageElement,
+  target: { path: string; alt: string; from: number; to: number },
+): HTMLElement {
+  const handle = document.createElement('span')
+  handle.className = 'cm-image-resize'
+  handle.title = 'Drag to resize — double-click image to reset'
+  handle.style.position = 'absolute'
+  handle.style.right = '-4px'
+  handle.style.bottom = '0px'
+  handle.style.width = '14px'
+  handle.style.height = '14px'
+  handle.style.borderRight = '3px solid #94a3b8'
+  handle.style.borderBottom = '3px solid #94a3b8'
+  handle.style.borderBottomRightRadius = '4px'
+  handle.style.cursor = 'nwse-resize'
+  handle.style.opacity = '0'
+  handle.style.transition = 'opacity 150ms'
+  handle.style.touchAction = 'none'
+
+  // Dimension tooltip shown while dragging.
+  const badge = document.createElement('span')
+  badge.style.position = 'absolute'
+  badge.style.top = '12px'
+  badge.style.left = '12px'
+  badge.style.padding = '2px 6px'
+  badge.style.borderRadius = '4px'
+  badge.style.backgroundColor = 'rgba(0,0,0,0.75)'
+  badge.style.color = '#e2e8f0'
+  badge.style.fontSize = '11px'
+  badge.style.whiteSpace = 'nowrap'
+  badge.style.display = 'none'
+  badge.style.pointerEvents = 'none'
+
+  let dragging = false
+  let startX = 0
+  let startWidth = 0
+
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragging = true
+    startX = e.clientX
+    startWidth = img.getBoundingClientRect().width
+    handle.setPointerCapture(e.pointerId)
+    img.style.outline = '2px dashed #8b5cf6'
+    img.style.outlineOffset = '2px'
+    badge.style.display = 'block'
+  })
+
+  handle.addEventListener('pointermove', (e) => {
+    if (!dragging) return
+    const next = clampWidth(startWidth + (e.clientX - startX), view, img)
+    img.style.width = `${next}px`
+    const h = Math.round(img.getBoundingClientRect().height)
+    badge.textContent = `${Math.round(next)} × ${h}`
+    badge.style.left = `${e.clientX - handle.getBoundingClientRect().left + 16}px`
+    badge.style.top = `${e.clientY - handle.getBoundingClientRect().top + 16}px`
+  })
+
+  const endDrag = (e: PointerEvent) => {
+    if (!dragging) return
+    dragging = false
+    handle.releasePointerCapture(e.pointerId)
+    img.style.outline = ''
+    img.style.outlineOffset = ''
+    badge.style.display = 'none'
+    const finalWidth = Math.round(img.getBoundingClientRect().width)
+    // Persist as an HTML <img> tag; converts ![]() markdown on first resize.
+    replaceImageSource(
+      view,
+      target.from,
+      target.to,
+      serializeImage(target.path, target.alt, finalWidth),
+    )
+  }
+  handle.addEventListener('pointerup', endDrag)
+  handle.addEventListener('pointercancel', endDrag)
+
+  handle.appendChild(badge)
+  return handle
+}
+
+/** Min 80px; max = the editor content width (never wider than the container). */
+function clampWidth(width: number, view: EditorView, img: HTMLImageElement): number {
+  const container = img.closest('.cm-image-widget')?.getBoundingClientRect().width
+  const max = container !== undefined && container > 0 ? container : view.dom.clientWidth
+  return Math.min(Math.max(width, MIN_IMAGE_WIDTH), max)
 }
 
 class FileWidget extends WidgetType {
@@ -353,7 +550,7 @@ function buildDecorations(view: EditorView): DecorationSet {
     let widget: WidgetType
     if (link.isImage) {
       const src = resolveImageSrc(link.path)
-      widget = new ImageWidget(src, link.name, line.from, line.to)
+      widget = new ImageWidget(src, link.name, link.path, link.width, line.from, line.to)
     } else {
       const ext = getFileExtension(link.path)
       widget = new FileWidget(link.name, ext, link.path, line.from, line.to)

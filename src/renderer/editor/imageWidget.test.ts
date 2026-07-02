@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+// The real module imports @renderer/api (window.api) at module level; stub it
+// so the exported pure functions can be imported and tested directly.
+vi.mock('@renderer/api', () => ({ api: {} }))
+const { findAttachmentLinks, serializeImage } = await import('./imageWidget')
 
 // Test the pure logic of image link finding (extracted for testability)
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'])
@@ -132,5 +137,86 @@ describe('findImageLinks', () => {
     const results = findImageLinks(doc)
     expect(results).toHaveLength(1)
     expect(results[0].path).toBe('_attachments/2024/photo.webp')
+  })
+})
+
+describe('serializeImage (Epic 14)', () => {
+  it('emits plain markdown at natural size', () => {
+    expect(serializeImage('_attachments/pic.png', 'pic', null)).toBe('![pic](_attachments/pic.png)')
+  })
+
+  it('emits an HTML <img> tag once a width is set', () => {
+    expect(serializeImage('_attachments/pic.png', 'pic', 300)).toBe(
+      '<img src="_attachments/pic.png" alt="pic" width="300" />',
+    )
+  })
+
+  it('rounds fractional widths', () => {
+    expect(serializeImage('a.png', '', 299.6)).toContain('width="300"')
+  })
+
+  it('escapes quotes and ampersands in attributes', () => {
+    expect(serializeImage('a&b.png', 'say "hi"', 200)).toBe(
+      '<img src="a&amp;b.png" alt="say &quot;hi&quot;" width="200" />',
+    )
+  })
+})
+
+describe('findAttachmentLinks: HTML <img> parsing (Epic 14)', () => {
+  it('parses an <img> tag with width', () => {
+    const doc = '<img src="_attachments/pic.png" alt="pic" width="300" />'
+    const links = findAttachmentLinks(doc)
+    expect(links).toHaveLength(1)
+    expect(links[0]).toMatchObject({
+      path: '_attachments/pic.png',
+      name: 'pic',
+      isImage: true,
+      width: 300,
+      from: 0,
+      to: doc.length,
+    })
+  })
+
+  it('parses an <img> tag without width as natural size', () => {
+    const links = findAttachmentLinks('<img src="pic.png" alt="" />')
+    expect(links).toHaveLength(1)
+    expect(links[0].width).toBeNull()
+  })
+
+  it('ignores an invalid width value', () => {
+    expect(findAttachmentLinks('<img src="p.png" width="abc" />')[0].width).toBeNull()
+    expect(findAttachmentLinks('<img src="p.png" width="-50" />')[0].width).toBeNull()
+  })
+
+  it('round-trips serializeImage output', () => {
+    const doc = serializeImage('_attachments/a&b.png', 'say "hi"', 240)
+    const links = findAttachmentLinks(doc)
+    expect(links[0]).toMatchObject({
+      path: '_attachments/a&b.png',
+      name: 'say "hi"',
+      width: 240,
+    })
+  })
+
+  it('markdown images still parse with width null', () => {
+    const links = findAttachmentLinks('![shot](_attachments/shot.png)')
+    expect(links[0]).toMatchObject({ isImage: true, width: null })
+  })
+
+  it('skips <img> tags without a src or with a non-image src', () => {
+    expect(findAttachmentLinks('<img width="300" />')).toHaveLength(0)
+    expect(findAttachmentLinks('<img src="doc.pdf" width="300" />')).toHaveLength(0)
+  })
+
+  it('skips <img> tags inside code fences and inline code', () => {
+    expect(findAttachmentLinks('```html\n<img src="pic.png" width="300" />\n```')).toHaveLength(0)
+    expect(findAttachmentLinks('use `<img src="pic.png" width="300" />` here')).toHaveLength(0)
+  })
+
+  it('finds both markdown and HTML images in one doc, sorted by position', () => {
+    const doc = '![a](one.png)\n\n<img src="two.png" alt="b" width="150" />'
+    const links = findAttachmentLinks(doc)
+    expect(links.map((l) => l.path)).toEqual(['one.png', 'two.png'])
+    expect(links.map((l) => l.width)).toEqual([null, 150])
   })
 })
