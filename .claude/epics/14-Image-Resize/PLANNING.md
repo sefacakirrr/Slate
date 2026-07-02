@@ -1,5 +1,8 @@
 # Epic 14 — Image Resize: Planning
 
+> **Status**: COMPLETE
+> **Closed**: 2026-07-02
+
 ## Phases
 
 ### Phase 1: Resize Infrastructure
