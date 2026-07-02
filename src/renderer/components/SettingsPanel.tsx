@@ -125,8 +125,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               }`}
             >
               <span
-                className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${
-                  autoSave ? 'translate-x-[18px]' : 'translate-x-0.5'
+                className={`absolute left-0.5 top-0.5 size-4 rounded-full bg-white transition-transform ${
+                  autoSave ? 'translate-x-4' : 'translate-x-0'
                 }`}
               />
               <span className="sr-only">Toggle auto-save</span>
