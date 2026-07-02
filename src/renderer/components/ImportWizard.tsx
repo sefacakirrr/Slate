@@ -118,6 +118,11 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
                 </span>
               </span>
             </button>
+            <p className="text-xs text-slate-500">
+              Apple Notes? It has no bulk export — use a free tool like{' '}
+              <span className="text-slate-400">Exporter</span> (Mac App Store) to export your notes
+              as Markdown or HTML files first, then import that folder here.
+            </p>
           </div>
         )}
 
