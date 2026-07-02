@@ -26,6 +26,51 @@ export function semverGt(a: string, b: string): boolean {
   return a3 > b3
 }
 
+/** Release-notes summary limits: keep the settings panel compact. */
+const NOTES_MAX_LINES = 8
+const NOTES_MAX_CHARS = 600
+
+/**
+ * Normalizes raw release notes (GitHub markdown body, or electron-updater's
+ * HTML string / per-version array) into a short plain-text summary for the
+ * settings panel. Pure — unit-testable.
+ */
+export function summarizeReleaseNotes(
+  raw: string | { version: string; note: string | null }[] | null | undefined,
+): string | undefined {
+  const text = Array.isArray(raw)
+    ? raw.map((r) => (r.note === null ? '' : `${r.version}: ${r.note}`)).join('\n')
+    : (raw ?? '')
+
+  const plain = text
+    // HTML from electron-updater's GitHub provider → text.
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|li|ul|ol|h[1-6]|div)>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    // Markdown noise from a GitHub release body → readable text.
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/^\s*[-*]\s+/gm, '• ')
+    .replace(/\r/g, '')
+
+  const lines = plain
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+  if (lines.length === 0) return undefined
+
+  let summary = lines.slice(0, NOTES_MAX_LINES).join('\n')
+  if (summary.length > NOTES_MAX_CHARS) summary = `${summary.slice(0, NOTES_MAX_CHARS - 1)}…`
+  else if (lines.length > NOTES_MAX_LINES) summary += '\n…'
+  return summary
+}
+
 /**
  * Drives in-app updates (Epic 12) with a hard platform split:
  * - Windows: `electron-updater` checks + downloads + installs.
@@ -40,6 +85,9 @@ export class UpdateService {
   private readonly emit: (state: UpdateState) => void
   private readonly isMac = process.platform === 'darwin'
   private winWired = false
+  /** Notes from the last `available` event, re-attached to progress emits so
+   *  the "What's new" summary stays visible while the download runs. */
+  private lastNotes: string | undefined
 
   constructor(emit: (state: UpdateState) => void) {
     this.emit = emit
@@ -73,15 +121,20 @@ export class UpdateService {
   /** Windows path: electron-updater checks, auto-downloads, and reports progress. */
   private checkWindows(): void {
     if (!this.winWired) {
-      autoUpdater.on('update-available', (info) =>
-        this.emit({ status: 'available', version: info.version }),
-      )
+      autoUpdater.on('update-available', (info) => {
+        this.lastNotes = summarizeReleaseNotes(info.releaseNotes)
+        this.emit({ status: 'available', version: info.version, notes: this.lastNotes })
+      })
       autoUpdater.on('update-not-available', () => this.emit({ status: 'up-to-date' }))
       autoUpdater.on('download-progress', (p) =>
-        this.emit({ status: 'downloading', percent: Math.round(p.percent) }),
+        this.emit({ status: 'downloading', percent: Math.round(p.percent), notes: this.lastNotes }),
       )
       autoUpdater.on('update-downloaded', (info) =>
-        this.emit({ status: 'downloaded', version: info.version }),
+        this.emit({
+          status: 'downloaded',
+          version: info.version,
+          notes: summarizeReleaseNotes(info.releaseNotes) ?? this.lastNotes,
+        }),
       )
       autoUpdater.on('error', (err) =>
         this.emit({ status: 'error', error: err instanceof Error ? err.message : String(err) }),
@@ -105,13 +158,14 @@ export class UpdateService {
         this.emit({ status: 'error', error: `GitHub API ${res.status}` })
         return
       }
-      const data = (await res.json()) as { tag_name?: string; html_url?: string }
+      const data = (await res.json()) as { tag_name?: string; html_url?: string; body?: string }
       const latest = data.tag_name ?? ''
       if (latest && semverGt(latest, app.getVersion())) {
         this.emit({
           status: 'available',
           version: latest.replace(/^v/i, ''),
           url: data.html_url ?? `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
+          notes: summarizeReleaseNotes(data.body),
         })
       } else {
         this.emit({ status: 'up-to-date' })

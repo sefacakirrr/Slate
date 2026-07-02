@@ -48,6 +48,8 @@ export type UpdateState = {
   url?: string
   /** Human-readable error (on `error`). */
   error?: string
+  /** Plain-text release-notes summary (on `available`/`downloaded`). */
+  notes?: string
 }
 
 /** Import wizard (Epic 15): what a scan of the chosen source found. */

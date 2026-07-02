@@ -323,6 +323,21 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 Version {update.version} downloaded — restart to install.
               </span>
             )}
+            {/* What's new: release-notes summary for the offered version. */}
+            {(update.status === 'available' ||
+              update.status === 'downloading' ||
+              update.status === 'downloaded') &&
+              'notes' in update &&
+              update.notes && (
+                <div className="rounded-md bg-slate-900 px-3 py-2 dark:bg-slate-900 light:bg-slate-100">
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500 light:text-slate-400">
+                    What's new
+                  </p>
+                  <p className="whitespace-pre-line text-xs leading-relaxed text-slate-400 light:text-slate-600">
+                    {update.notes}
+                  </p>
+                </div>
+              )}
             {update.status === 'dev-disabled' && (
               <span className="text-xs text-slate-500 light:text-slate-400">
                 Updates are only available in the installed app.
