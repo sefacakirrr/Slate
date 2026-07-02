@@ -1,5 +1,10 @@
 # Epic 13 — Auto-Save: Planning
 
+## Status: COMPLETE — reviewed & approved 2026-07-02
+
+- Phase 1: COMPLETE ✓ (reviewed) — commit `0ba9a69`
+- Phase 2: COMPLETE ✓ (reviewed) — commits `0ba9a69`, `4646572` (toggle knob fix)
+
 ## Phases
 
 ### Phase 1: Settings & Core Logic
