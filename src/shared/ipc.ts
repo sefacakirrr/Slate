@@ -38,6 +38,9 @@ export type IpcCommands = {
   /** Auto-save toggle (Epic 13). */
   'settings:getAutoSave': { request: undefined; response: boolean }
   'settings:setAutoSave': { request: boolean; response: undefined }
+  /** Custom sidebar ordering: folder path ('' = root) → child names in order. */
+  'settings:getNoteOrder': { request: undefined; response: Record<string, string[]> }
+  'settings:setNoteOrder': { request: { folder: string; names: string[] }; response: undefined }
   'dialog:pickFolder': { request: undefined; response: string | null }
   'vault:listNotes': { request: undefined; response: string[] }
   'vault:listDirs': { request: undefined; response: string[] }
@@ -147,6 +150,8 @@ export type Api = {
     setTheme: (theme: ThemeMode) => Promise<IpcResult<undefined>>
     getAutoSave: () => Promise<IpcResult<boolean>>
     setAutoSave: (autoSave: boolean) => Promise<IpcResult<undefined>>
+    getNoteOrder: () => Promise<IpcResult<Record<string, string[]>>>
+    setNoteOrder: (req: { folder: string; names: string[] }) => Promise<IpcResult<undefined>>
   }
   dialog: {
     pickFolder: () => Promise<IpcResult<string | null>>

@@ -23,6 +23,8 @@ const api: Api = {
     setTheme: (theme) => invoke('settings:setTheme', theme),
     getAutoSave: () => invoke('settings:getAutoSave'),
     setAutoSave: (autoSave) => invoke('settings:setAutoSave', autoSave),
+    getNoteOrder: () => invoke('settings:getNoteOrder'),
+    setNoteOrder: (req) => invoke('settings:setNoteOrder', req),
   },
   dialog: {
     pickFolder: () => invoke('dialog:pickFolder'),

@@ -64,8 +64,29 @@ type TreeNode = {
   children?: TreeNode[]
 }
 
+/** The parent folder of a vault path ('' for root-level entries). */
+function parentOf(path: string): string {
+  const slash = path.lastIndexOf('/')
+  return slash === -1 ? '' : path.slice(0, slash)
+}
+
+/** Finds a folder node by its full path anywhere in the tree. */
+function findFolderNode(nodes: TreeNode[], path: string): TreeNode | null {
+  for (const n of nodes) {
+    if (!n.children) continue
+    if (n.path === path) return n
+    const hit = findFolderNode(n.children, path)
+    if (hit) return hit
+  }
+  return null
+}
+
 /** Builds a nested folder/file tree from note paths + known empty folder paths. */
-function buildTree(paths: string[], knownFolders: string[] = []): TreeNode[] {
+function buildTree(
+  paths: string[],
+  knownFolders: string[] = [],
+  noteOrder: Record<string, string[]> = {},
+): TreeNode[] {
   const roots: TreeNode[] = []
 
   function upsertPath(allSegments: string[], isFolder: boolean): void {
@@ -95,19 +116,34 @@ function buildTree(paths: string[], knownFolders: string[] = []): TreeNode[] {
     upsertPath(filePath.split('/'), false)
   }
 
-  sortLevel(roots)
+  sortLevel(roots, '', noteOrder)
   return roots
 }
 
-/** Folders before files, each group alphabetical (case-insensitive). */
-function sortLevel(nodes: TreeNode[]): void {
+/**
+ * Folders before files, folders alphabetical (case-insensitive). Files follow
+ * the level's custom order when one exists (drag-to-reorder); names not in the
+ * list — new/renamed notes — sort alphabetically after the ordered ones.
+ */
+function sortLevel(nodes: TreeNode[], folder: string, noteOrder: Record<string, string[]>): void {
+  const custom = noteOrder[folder]
+  const pos = new Map<string, number>()
+  if (custom) custom.forEach((name, i) => pos.set(name, i))
+
   nodes.sort((a, b) => {
     const aDir = Boolean(a.children)
     const bDir = Boolean(b.children)
     if (aDir !== bDir) return aDir ? -1 : 1
+    if (!aDir) {
+      const ai = pos.get(a.name)
+      const bi = pos.get(b.name)
+      if (ai !== undefined && bi !== undefined) return ai - bi
+      if (ai !== undefined) return -1
+      if (bi !== undefined) return 1
+    }
     return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
   })
-  for (const n of nodes) if (n.children) sortLevel(n.children)
+  for (const n of nodes) if (n.children) sortLevel(n.children, n.path, noteOrder)
 }
 
 function TreeRow({
@@ -118,6 +154,7 @@ function TreeRow({
   onCreateNoteIn,
   onCreateFolderIn,
   onDropOnFolder,
+  onReorder,
 }: {
   node: TreeNode
   depth: number
@@ -126,6 +163,8 @@ function TreeRow({
   onCreateNoteIn: (folderPath: string, name?: string) => void
   onCreateFolderIn: (fullPath: string) => void
   onDropOnFolder: (folderPath: string) => void
+  /** Drop a same-folder file above/below this node (drag-to-reorder). */
+  onReorder: (dragged: string, target: string, position: 'above' | 'below') => void
 }) {
   const activeTabPath = useWorkspaceStore((s) => s.activeTabPath)
   const openTab = useWorkspaceStore((s) => s.openTab)
@@ -141,6 +180,8 @@ function TreeRow({
   const [creatingChild, setCreatingChild] = useState<'note' | 'folder' | null>(null)
   const [childName, setChildName] = useState('')
   const [isDropTarget, setIsDropTarget] = useState(false)
+  /** Reorder indicator while a same-folder file hovers this row (Epic sidebar order). */
+  const [reorderHint, setReorderHint] = useState<'above' | 'below' | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const childInputRef = useRef<HTMLInputElement>(null)
   const pad = { paddingLeft: `${depth * 12 + 8}px` }
@@ -338,6 +379,7 @@ function TreeRow({
                 onCreateNoteIn={onCreateNoteIn}
                 onCreateFolderIn={onCreateFolderIn}
                 onDropOnFolder={onDropOnFolder}
+                onReorder={onReorder}
               />
             ))}
           </>
@@ -375,6 +417,13 @@ function TreeRow({
   const selected = activeTabPath === node.path
   const locked = isLockedPath(node.path)
   const label = leafDisplayName(node.name)
+  // A same-folder file dragged over this row reorders (above/below by pointer
+  // half); anything else falls through to the folder-move handlers upstream.
+  const isReorderDrag = () =>
+    _dragItem !== null &&
+    _dragItem.type === 'file' &&
+    _dragItem.path !== node.path &&
+    parentOf(_dragItem.path) === parentOf(node.path)
   return (
     <div
       draggable
@@ -385,13 +434,41 @@ function TreeRow({
       }}
       onDragEnd={() => {
         _dragItem = null
+        setReorderHint(null)
       }}
-      className={`group flex min-w-0 items-center overflow-hidden border-l-2 transition-colors ${
+      onDragOver={(e) => {
+        if (!isReorderDrag()) return
+        e.preventDefault()
+        e.stopPropagation()
+        e.dataTransfer.dropEffect = 'move'
+        const rect = e.currentTarget.getBoundingClientRect()
+        setReorderHint(e.clientY < rect.top + rect.height / 2 ? 'above' : 'below')
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setReorderHint(null)
+      }}
+      onDrop={(e) => {
+        const dragged = _dragItem?.path
+        if (dragged === undefined || !isReorderDrag() || reorderHint === null) return
+        e.preventDefault()
+        e.stopPropagation()
+        _dragItem = null
+        onReorder(dragged, node.path, reorderHint)
+        setReorderHint(null)
+      }}
+      className={`group relative flex min-w-0 items-center overflow-hidden border-l-2 transition-colors ${
         selected
           ? 'border-accent-500 bg-accent-500/10'
           : 'border-transparent hover:bg-slate-800/60 light:hover:bg-slate-100'
       }`}
     >
+      {reorderHint !== null && (
+        <div
+          className={`pointer-events-none absolute inset-x-1 h-0.5 rounded bg-accent-400 ${
+            reorderHint === 'above' ? 'top-0' : 'bottom-0'
+          }`}
+        />
+      )}
       <button
         type="button"
         onClick={() => (locked ? openLocked(node.path) : openTab(node.path))}
@@ -545,7 +622,13 @@ export function Sidebar() {
   const renameTab = useWorkspaceStore((s) => s.renameTab)
   const closeFolderTabs = useWorkspaceStore((s) => s.closeFolderTabs)
   const loadTags = useTagsStore((s) => s.loadTags)
-  const tree = useMemo(() => buildTree(fileList, folderList), [fileList, folderList])
+  const noteOrder = useVaultStore((s) => s.noteOrder)
+  const loadNoteOrder = useVaultStore((s) => s.loadNoteOrder)
+  const setLevelOrder = useVaultStore((s) => s.setLevelOrder)
+  const tree = useMemo(
+    () => buildTree(fileList, folderList, noteOrder),
+    [fileList, folderList, noteOrder],
+  )
 
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const [pendingDeleteFolder, setPendingDeleteFolder] = useState<string | null>(null)
@@ -563,7 +646,8 @@ export function Sidebar() {
 
   useEffect(() => {
     loadTags()
-  }, [loadTags])
+    void loadNoteOrder()
+  }, [loadTags, loadNoteOrder])
 
   useEffect(() => {
     if (creatingFolder) folderInputRef.current?.focus()
@@ -659,6 +743,28 @@ export function Sidebar() {
 
   const handleCreateFolderIn = async (fullPath: string) => {
     await createFolder(fullPath)
+  }
+
+  /**
+   * Reorders a file within its folder (drag onto a sibling's top/bottom half).
+   * The full display order of that level's files — as currently rendered — is
+   * captured with the dragged name spliced in, then persisted, so the first
+   * ever reorder freezes the alphabetical order into an explicit one.
+   */
+  const handleReorder = (dragged: string, target: string, position: 'above' | 'below') => {
+    const folder = parentOf(target)
+    // Current visual order of files at this level (folders sort separately).
+    const level = folder === '' ? tree : findFolderNode(tree, folder)?.children
+    if (!level) return
+    const files = level.filter((n) => !n.children).map((n) => n.name)
+    const draggedName = dragged.slice(dragged.lastIndexOf('/') + 1)
+    const targetName = target.slice(target.lastIndexOf('/') + 1)
+
+    const without = files.filter((n) => n !== draggedName)
+    const at = without.indexOf(targetName)
+    if (at === -1) return
+    without.splice(position === 'above' ? at : at + 1, 0, draggedName)
+    void setLevelOrder(folder, without)
   }
 
   const handleDrop = async (toFolder: string) => {
@@ -829,6 +935,7 @@ export function Sidebar() {
                     onCreateNoteIn={handleCreateNoteIn}
                     onCreateFolderIn={handleCreateFolderIn}
                     onDropOnFolder={handleDrop}
+                    onReorder={handleReorder}
                   />
                 ))}
                 <div

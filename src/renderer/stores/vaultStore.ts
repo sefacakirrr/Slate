@@ -21,6 +21,15 @@ type VaultState = {
   offerFirstRunImport: boolean
   dismissFirstRunImport: () => void
 
+  /**
+   * Custom sidebar ordering: folder path ('' = root) → child names in display
+   * order. Names missing from a level's list sort after it alphabetically.
+   */
+  noteOrder: Record<string, string[]>
+  loadNoteOrder: () => Promise<void>
+  /** Persists one level's order (optimistic; keyed by folder path). */
+  setLevelOrder: (folder: string, names: string[]) => Promise<void>
+
   /** Reads the persisted vault path on startup. */
   loadVaultPath: () => Promise<void>
   /** Opens the native folder picker; persists and adopts the choice if made. */
@@ -61,6 +70,17 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   treeLoading: false,
   offerFirstRunImport: false,
   dismissFirstRunImport: () => set({ offerFirstRunImport: false }),
+
+  noteOrder: {},
+  loadNoteOrder: async () => {
+    const result = await api.settings.getNoteOrder()
+    if (result.ok) set({ noteOrder: result.data })
+  },
+  setLevelOrder: async (folder, names) => {
+    set((s) => ({ noteOrder: { ...s.noteOrder, [folder]: names } }))
+    const result = await api.settings.setNoteOrder({ folder, names })
+    if (!result.ok) console.error(`setNoteOrder failed: ${result.error}`)
+  },
 
   loadVaultPath: async () => {
     set({ loading: true })

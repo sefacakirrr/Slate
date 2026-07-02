@@ -130,6 +130,35 @@ describe('SettingsService', () => {
     })
   })
 
+  describe('noteOrder (sidebar drag-to-reorder)', () => {
+    it('defaults to {} when never set', async () => {
+      expect(await new SettingsService(filePath).getNoteOrder()).toEqual({})
+    })
+
+    it('persists per-folder orders independently and reads back across instances', async () => {
+      const s = new SettingsService(filePath)
+      await s.setNoteOrder('', ['b.md', 'a.md'])
+      await s.setNoteOrder('work', ['z.md', 'y.md'])
+      const order = await new SettingsService(filePath).getNoteOrder()
+      expect(order['']).toEqual(['b.md', 'a.md'])
+      expect(order.work).toEqual(['z.md', 'y.md'])
+    })
+
+    it('replaces one level without touching others', async () => {
+      const s = new SettingsService(filePath)
+      await s.setNoteOrder('', ['b.md', 'a.md'])
+      await s.setNoteOrder('', ['a.md', 'b.md'])
+      const order = await s.getNoteOrder()
+      expect(order['']).toEqual(['a.md', 'b.md'])
+    })
+
+    it('defaults to {} for a pre-existing settings file without the key', async () => {
+      const { writeFile } = await import('node:fs/promises')
+      await writeFile(filePath, JSON.stringify({ vaultPath: 'C:/v' }), 'utf-8')
+      expect(await new SettingsService(filePath).getNoteOrder()).toEqual({})
+    })
+  })
+
   describe('stickies (Epic 11)', () => {
     const bounds = { x: 10, y: 20, width: 320, height: 300 }
 

@@ -36,6 +36,13 @@ type SettingsData = {
   stickies: StickyRecord[]
   /** Auto-save the active note after a short debounce (Epic 13). */
   autoSave: boolean
+  /**
+   * Custom sidebar ordering: folder path ('' = vault root) → child names in
+   * display order. Levels absent here (and names not listed) fall back to the
+   * default folders-first alphabetical sort. A UI preference, not vault data —
+   * so it lives here, like workspace/stickies.
+   */
+  noteOrder: Record<string, string[]>
 }
 
 const DEFAULTS: SettingsData = {
@@ -45,6 +52,7 @@ const DEFAULTS: SettingsData = {
   encryption: null,
   stickies: [],
   autoSave: true,
+  noteOrder: {},
 }
 
 /**
@@ -175,6 +183,19 @@ export class SettingsService {
   async setAutoSave(autoSave: boolean): Promise<void> {
     const data = await this.load()
     await this.persist({ ...data, autoSave })
+  }
+
+  /** Custom sidebar order map (folder path → child names). {} if never set. */
+  async getNoteOrder(): Promise<Record<string, string[]>> {
+    const data = await this.load()
+    return data.noteOrder ?? {}
+  }
+
+  /** Replaces one level's custom order, keeping the rest of the map. */
+  async setNoteOrder(folder: string, names: string[]): Promise<void> {
+    const data = await this.load()
+    const noteOrder = { ...(data.noteOrder ?? {}), [folder]: names }
+    await this.persist({ ...data, noteOrder })
   }
 
   /** Removes one sticky from the persisted set (on close). */

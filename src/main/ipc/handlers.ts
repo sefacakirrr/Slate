@@ -91,6 +91,11 @@ function buildHandlers(deps: Deps): HandlerMap {
       await deps.settings.setAutoSave(autoSave)
       return undefined
     },
+    'settings:getNoteOrder': () => deps.settings.getNoteOrder(),
+    'settings:setNoteOrder': async (req) => {
+      await deps.settings.setNoteOrder(req.folder, req.names)
+      return undefined
+    },
     'dialog:pickFolder': async () => {
       const win = deps.getMainWindow()
       const result = win
@@ -421,6 +426,8 @@ export function registerIpcHandlers(ipc: IpcMain, deps: Deps): void {
   register(ipc, 'settings:setTheme', handlers['settings:setTheme'])
   register(ipc, 'settings:getAutoSave', handlers['settings:getAutoSave'])
   register(ipc, 'settings:setAutoSave', handlers['settings:setAutoSave'])
+  register(ipc, 'settings:getNoteOrder', handlers['settings:getNoteOrder'])
+  register(ipc, 'settings:setNoteOrder', handlers['settings:setNoteOrder'])
   register(ipc, 'dialog:pickFolder', handlers['dialog:pickFolder'])
   register(ipc, 'vault:listNotes', handlers['vault:listNotes'])
   register(ipc, 'vault:listDirs', handlers['vault:listDirs'])
