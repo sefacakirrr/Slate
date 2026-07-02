@@ -105,6 +105,18 @@ const api: Api = {
       close: (path) => invoke('window:sticky:close', path),
     },
   },
+  import: {
+    pickSource: (req) => invoke('import:pickSource', req),
+    scan: (sourcePath) => invoke('import:scan', sourcePath),
+    execute: (req) => invoke('import:execute', req),
+    onProgress: (cb) => {
+      const listener = (_event: unknown, p: Parameters<typeof cb>[0]) => cb(p)
+      ipcRenderer.on('import:progress', listener)
+      return () => {
+        ipcRenderer.removeListener('import:progress', listener)
+      }
+    },
+  },
   update: {
     check: () => invoke('update:check'),
     install: () => invoke('update:install'),

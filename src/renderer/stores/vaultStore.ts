@@ -14,6 +14,12 @@ type VaultState = {
   folderList: string[]
   /** True while the file list is being (re)loaded. */
   treeLoading: boolean
+  /**
+   * True right after the first-ever vault selection (Epic 15): the app offers
+   * the import wizard once. Cleared by `dismissFirstRunImport`.
+   */
+  offerFirstRunImport: boolean
+  dismissFirstRunImport: () => void
 
   /** Reads the persisted vault path on startup. */
   loadVaultPath: () => Promise<void>
@@ -53,6 +59,8 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   fileList: [],
   folderList: [],
   treeLoading: false,
+  offerFirstRunImport: false,
+  dismissFirstRunImport: () => set({ offerFirstRunImport: false }),
 
   loadVaultPath: async () => {
     set({ loading: true })
@@ -64,6 +72,9 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     const picked = await api.dialog.pickFolder()
     if (!picked.ok || picked.data === null) return
 
+    // First-ever vault selection (no vault before) → offer the import wizard.
+    const isFirstRun = get().vaultPath === null
+
     set({ loading: true })
     const saved = await api.settings.setVaultPath(picked.data)
     // New vault → the open tabs belong to the old vault; clear the workspace.
@@ -72,6 +83,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       vaultPath: saved.ok ? picked.data : null,
       loading: false,
       fileList: [],
+      offerFirstRunImport: saved.ok && isFirstRun,
     })
   },
 

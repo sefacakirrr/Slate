@@ -3,6 +3,7 @@ import type { IpcChannel, IpcRequest, IpcResponse, IpcResult } from '@shared/ipc
 import { type BrowserWindow, dialog, type IpcMain, type IpcMainInvokeEvent, shell } from 'electron'
 import type { AttachmentService } from '../services/AttachmentService'
 import type { EncryptionService } from '../services/EncryptionService'
+import { ImportService } from '../services/ImportService'
 import type { IndexService } from '../services/IndexService'
 import { reconcileIndex } from '../services/reconcile'
 import type { SearchService } from '../services/SearchService'
@@ -339,6 +340,39 @@ function buildHandlers(deps: Deps): HandlerMap {
       return undefined
     },
     'window:isMaximized': () => deps.getMainWindow()?.isMaximized() ?? false,
+    'import:pickSource': async (req) => {
+      const win = deps.getMainWindow()
+      const options: Electron.OpenDialogOptions =
+        req.kind === 'folder'
+          ? { properties: ['openDirectory'] }
+          : {
+              properties: ['openFile'],
+              filters: [{ name: 'Notion export', extensions: ['zip'] }],
+            }
+      const result = win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options)
+      if (result.canceled || result.filePaths.length === 0) return null
+      return result.filePaths[0]
+    },
+    'import:scan': async (sourcePath) => new ImportService(await vault()).scan(sourcePath),
+    'import:execute': async (req) => {
+      const v = await vault()
+      const importer = new ImportService(v)
+      const result = await importer.execute(req, (p) => {
+        deps.getMainWindow()?.webContents.send('import:progress', p)
+      })
+      // Imported files appeared on disk behind the index's back — reconcile so
+      // they are searchable immediately (epic success criterion), then refresh
+      // the file lists in every window.
+      try {
+        await reconcileIndex(v, deps.index)
+      } catch (err) {
+        console.error('reconcile after import failed:', err)
+      }
+      deps.windowManager.broadcastFilesChanged()
+      return result
+    },
   }
 }
 
@@ -415,4 +449,7 @@ export function registerIpcHandlers(ipc: IpcMain, deps: Deps): void {
   register(ipc, 'window:close', handlers['window:close'])
   register(ipc, 'window:forceClose', handlers['window:forceClose'])
   register(ipc, 'window:isMaximized', handlers['window:isMaximized'])
+  register(ipc, 'import:pickSource', handlers['import:pickSource'])
+  register(ipc, 'import:scan', handlers['import:scan'])
+  register(ipc, 'import:execute', handlers['import:execute'])
 }

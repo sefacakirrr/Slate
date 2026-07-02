@@ -2,7 +2,7 @@
 
 ## Status: IN PROGRESS
 
-## Current phase: Phase 1 — Core Import Engine (complete) → Phase 2 next
+## Current phase: Phase 2 — IPC & UI (complete) → Phase 3 next
 
 | # | Task | Status |
 |---|------|--------|
@@ -12,14 +12,14 @@
 | 4 | HTML importer (turndown) | done |
 | 5 | Notion zip importer | done |
 | 6 | Add turndown dependency | done |
-| 7 | IPC channels | pending |
-| 8 | Import wizard modal | pending |
-| 9 | First-run flow integration | pending |
-| 10 | Settings panel entry | pending |
+| 7 | IPC channels | done |
+| 8 | Import wizard modal | done |
+| 9 | First-run flow integration | done |
+| 10 | Settings panel entry | done |
 | 11 | Unit tests | pending |
 | 12 | Filename conflict handling | pending |
 | 13 | Encoding detection | done |
-| 14 | Post-import reconcile trigger | pending |
+| 14 | Post-import reconcile trigger | done |
 
 ## Notes (Phase 1)
 
@@ -38,3 +38,21 @@
 - Dependencies added: `turndown` + `adm-zip` (+ types). adm-zip chosen for
   zip reading: pure JS, no native build, matches the no-native-addon policy
   in TECHSTACK.md. Both smoke-tested under the project's Node runtime.
+
+## Notes (Phase 2)
+
+- IPC: `import:pickSource` (native dialog: folder or .zip with filter),
+  `import:scan`, `import:execute`; progress pushed via `import:progress`
+  event (same pattern as `update:state`). Task 14 (reconcile) landed inside
+  `import:execute` — reconcileIndex + broadcastFilesChanged after the copy.
+- `ImportWizard.tsx`: modal with pick → scanning → preview (+destination
+  radio: `Imported/<source>/` default or root) → progress bar → done/error.
+  Escape/backdrop close disabled mid-import.
+- Settings entry: "Import" section in SettingsPanel (button disabled without
+  a vault). First-run: `vaultStore.offerFirstRunImport` set when the FIRST
+  vault is picked (vaultPath was null); App renders the wizard once,
+  dismissed via `dismissFirstRunImport`. No design system existed
+  (`.claude/designs/` absent) — wizard follows ConfirmDialog/SettingsPanel
+  visual conventions.
+- Remaining Phase 3 work: unit tests for importers + ImportService (tasks
+  12/13 code exists; tests still needed).

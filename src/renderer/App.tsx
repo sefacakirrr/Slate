@@ -1,6 +1,7 @@
 import { ConfirmDialog } from '@renderer/components/ConfirmDialog'
 import { ContentPane } from '@renderer/components/ContentPane'
 import { EmptyState } from '@renderer/components/EmptyState'
+import { ImportWizard } from '@renderer/components/ImportWizard'
 import { QuickCapture } from '@renderer/components/QuickCapture'
 import { SearchPanel } from '@renderer/components/SearchPanel'
 import { Sidebar } from '@renderer/components/Sidebar'
@@ -33,6 +34,8 @@ function MainApp() {
   const loading = useVaultStore((s) => s.loading)
   const loadVaultPath = useVaultStore((s) => s.loadVaultPath)
   const loadFiles = useVaultStore((s) => s.loadFiles)
+  const offerFirstRunImport = useVaultStore((s) => s.offerFirstRunImport)
+  const dismissFirstRunImport = useVaultStore((s) => s.dismissFirstRunImport)
   const restoreWorkspace = useWorkspaceStore((s) => s.restoreWorkspace)
   const loadAutoSave = useWorkspaceStore((s) => s.loadAutoSave)
   const tabs = useWorkspaceStore((s) => s.tabs)
@@ -139,6 +142,11 @@ function MainApp() {
       />
 
       <UnlockDialog />
+
+      {/* First-run import offer (Epic 15): shown once after the first vault pick. */}
+      {offerFirstRunImport && vaultPath !== null && (
+        <ImportWizard onClose={dismissFirstRunImport} />
+      )}
     </div>
   )
 

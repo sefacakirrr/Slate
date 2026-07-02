@@ -49,3 +49,25 @@ export type UpdateState = {
   /** Human-readable error (on `error`). */
   error?: string
 }
+
+/** Import wizard (Epic 15): what a scan of the chosen source found. */
+export type ImportScanInfo = {
+  kind: 'folder' | 'notion-zip'
+  sourceName: string
+  counts: { md: number; txt: number; html: number }
+  total: number
+}
+
+/** Import progress, pushed from main via the `import:progress` event. */
+export type ImportProgressInfo = {
+  done: number
+  total: number
+  currentFile: string
+}
+
+/** The outcome of an executed import. */
+export type ImportResultInfo = {
+  imported: number
+  skipped: number
+  targetFolder: string
+}

@@ -7,7 +7,16 @@
  * boundary, so renderer code always destructures `result.ok` to narrow safely.
  */
 
-import type { NoteListItem, SearchResult, TagInfo, ThemeMode, UpdateState } from './types'
+import type {
+  ImportProgressInfo,
+  ImportResultInfo,
+  ImportScanInfo,
+  NoteListItem,
+  SearchResult,
+  TagInfo,
+  ThemeMode,
+  UpdateState,
+} from './types'
 
 /** Discriminated union returned from every IPC handler. */
 export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -104,6 +113,15 @@ export type IpcCommands = {
   'update:install': { request: undefined; response: undefined }
   /** macOS: open the GitHub Releases page (optionally a specific URL). */
   'update:openReleases': { request: string | undefined; response: undefined }
+  /** Pick an import source: a folder or a Notion export zip (Epic 15). */
+  'import:pickSource': { request: { kind: 'folder' | 'zip' }; response: string | null }
+  /** Read-only scan of an import source for the wizard's preview step. */
+  'import:scan': { request: string; response: ImportScanInfo }
+  /** Run the import; per-note progress arrives via the `import:progress` event. */
+  'import:execute': {
+    request: { sourcePath: string; destination: 'imported-subfolder' | 'root' }
+    response: ImportResultInfo
+  }
 }
 
 export type IpcChannel = keyof IpcCommands
@@ -201,5 +219,16 @@ export type Api = {
     openReleases: (url?: string) => Promise<IpcResult<undefined>>
     /** Subscribe to update-state transitions. Returns an unsubscribe function. */
     onState: (cb: (state: UpdateState) => void) => () => void
+  }
+  /** Import wizard (Epic 15). */
+  import: {
+    pickSource: (req: { kind: 'folder' | 'zip' }) => Promise<IpcResult<string | null>>
+    scan: (sourcePath: string) => Promise<IpcResult<ImportScanInfo>>
+    execute: (req: {
+      sourcePath: string
+      destination: 'imported-subfolder' | 'root'
+    }) => Promise<IpcResult<ImportResultInfo>>
+    /** Subscribe to per-note import progress. Returns an unsubscribe function. */
+    onProgress: (cb: (p: ImportProgressInfo) => void) => () => void
   }
 }

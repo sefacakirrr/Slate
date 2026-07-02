@@ -1,4 +1,5 @@
 import { api } from '@renderer/api'
+import { ImportWizard } from '@renderer/components/ImportWizard'
 import { useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { useThemeStore } from '@renderer/stores/themeStore'
 import { useVaultStore } from '@renderer/stores/vaultStore'
@@ -29,6 +30,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [rebuilding, setRebuilding] = useState(false)
   const [rebuildStatus, setRebuildStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [update, setUpdate] = useState<UpdateState | { status: 'idle' }>({ status: 'idle' })
+  const [showImport, setShowImport] = useState(false)
 
   // Subscribe to update-state pushes from main (Epic 12).
   useEffect(() => api.update.onState(setUpdate), [])
@@ -96,6 +98,27 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               className="shrink-0 rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
             >
               Change
+            </button>
+          </div>
+        </section>
+
+        {/* Import (Epic 15) */}
+        <section>
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
+            Import
+          </h3>
+          <div className="space-y-2">
+            <p className="text-xs text-slate-500 light:text-slate-400">
+              Bring notes from other apps: folders of .md/.txt/.html files or a Notion export zip.
+              Originals are never modified.
+            </p>
+            <button
+              type="button"
+              disabled={vaultPath === null}
+              onClick={() => setShowImport(true)}
+              className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
+            >
+              Import notes
             </button>
           </div>
         </section>
@@ -313,6 +336,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           </div>
         </section>
       </div>
+
+      {showImport && <ImportWizard onClose={() => setShowImport(false)} />}
     </div>
   )
 }
