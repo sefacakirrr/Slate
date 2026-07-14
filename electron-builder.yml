@@ -54,7 +54,8 @@ win:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
-  perMachine: false
+  allowElevation: true
+  perMachine: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Slate

@@ -44,6 +44,7 @@ const api: Api = {
     hasPassword: () => invoke('vault:hasPassword'),
     setPassword: (req) => invoke('vault:setPassword', req),
     unlock: (req) => invoke('vault:unlock', req),
+    getPasswordHint: () => invoke('vault:getPasswordHint'),
     lockVault: () => invoke('vault:lockVault'),
     isVaultUnlocked: () => invoke('vault:isVaultUnlocked'),
     isLocked: (path) => invoke('vault:isLocked', path),
@@ -100,6 +101,13 @@ const api: Api = {
       ipcRenderer.on('window:confirmClose', listener)
       return () => {
         ipcRenderer.removeListener('window:confirmClose', listener)
+      }
+    },
+    onThemeChanged: (cb) => {
+      const listener = (_event: unknown, theme: string) => cb(theme)
+      ipcRenderer.on('theme:changed', listener)
+      return () => {
+        ipcRenderer.removeListener('theme:changed', listener)
       }
     },
     sticky: {

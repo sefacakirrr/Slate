@@ -36,6 +36,13 @@ export function StickyNote({ notePath }: { notePath: string }) {
     void init(notePath)
   }, [loadTheme, init, notePath])
 
+  // Listen for theme changes from the main window.
+  useEffect(() => {
+    return window.api.window.onThemeChanged((theme) => {
+      useThemeStore.getState().applyFromExternal(theme as 'dark' | 'light' | 'system')
+    })
+  }, [])
+
   // Best-effort save when the window loses focus (v1: last-write-wins).
   useEffect(() => {
     const save = () => void useStickyStore.getState().save()

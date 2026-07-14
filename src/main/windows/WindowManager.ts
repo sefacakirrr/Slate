@@ -47,6 +47,12 @@ export class WindowManager {
     }
   }
 
+  broadcastThemeChanged(theme: string): void {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('theme:changed', theme)
+    }
+  }
+
   createMainWindow(): BrowserWindow {
     this.mainWindow = new BrowserWindow({
       width: 1200,

@@ -2,6 +2,7 @@ import { api } from '@renderer/api'
 import { ImportWizard } from '@renderer/components/ImportWizard'
 import { useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { useThemeStore } from '@renderer/stores/themeStore'
+import { Upload } from 'lucide-react'
 import { useVaultStore } from '@renderer/stores/vaultStore'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import type { ThemeMode, UpdateState } from '@shared/types'
@@ -20,6 +21,14 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const pickAndSetVault = useVaultStore((s) => s.pickAndSetVault)
   const theme = useThemeStore((s) => s.theme)
   const setTheme = useThemeStore((s) => s.setTheme)
+  const colorThemeId = useThemeStore((s) => s.colorThemeId)
+  const setColorTheme = useThemeStore((s) => s.setColorTheme)
+  const allThemes = useThemeStore((s) => s.allThemes)
+  const importTheme = useThemeStore((s) => s.importTheme)
+  const backgroundImage = useThemeStore((s) => s.backgroundImage)
+  const backgroundOpacity = useThemeStore((s) => s.backgroundOpacity)
+  const setBackgroundImage = useThemeStore((s) => s.setBackgroundImage)
+  const setBackgroundOpacity = useThemeStore((s) => s.setBackgroundOpacity)
   const hasPassword = useEncryptionStore((s) => s.hasPassword)
   const unlocked = useEncryptionStore((s) => s.unlocked)
   const beginSetPassword = useEncryptionStore((s) => s.beginSetPassword)
@@ -81,6 +90,114 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               </button>
             ))}
           </div>
+        </section>
+
+        {/* Color Theme */}
+        <section>
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
+            Editor Color Theme
+          </h3>
+          <div className="grid grid-cols-3 gap-1.5">
+            {allThemes().map((ct) => (
+              <button
+                key={ct.id}
+                type="button"
+                onClick={() => setColorTheme(ct.id)}
+                className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors border ${
+                  colorThemeId === ct.id
+                    ? 'border-accent-500 bg-accent-600/20 text-accent-300'
+                    : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200 dark:border-slate-700 light:border-slate-200 light:text-slate-600 light:hover:text-slate-800'
+                }`}
+              >
+                <span
+                  className="mr-1.5 inline-block size-2 rounded-full"
+                  style={{ backgroundColor: ct.colors.cursor }}
+                />
+                {ct.name}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const input = document.createElement('input')
+              input.type = 'file'
+              input.accept = '.json'
+              input.onchange = () => {
+                const file = input.files?.[0]
+                if (!file) return
+                const reader = new FileReader()
+                reader.onload = () => {
+                  try {
+                    const json = JSON.parse(reader.result as string)
+                    const result = importTheme(json)
+                    if (!result) alert('Invalid theme file. Check the JSON format.')
+                  } catch {
+                    alert('Could not parse the file as JSON.')
+                  }
+                }
+                reader.readAsText(file)
+              }
+              input.click()
+            }}
+            className="mt-2 flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
+          >
+            <Upload className="size-3" />
+            Import Theme (.json)
+          </button>
+        </section>
+
+        {/* Background Image */}
+        <section>
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
+            Background Image
+          </h3>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const input = document.createElement('input')
+                input.type = 'file'
+                input.accept = 'image/*'
+                input.onchange = () => {
+                  const file = input.files?.[0]
+                  if (!file) return
+                  const reader = new FileReader()
+                  reader.onload = () => setBackgroundImage(reader.result as string)
+                  reader.readAsDataURL(file)
+                }
+                input.click()
+              }}
+              className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
+            >
+              {backgroundImage ? 'Change Image' : 'Select Image'}
+            </button>
+            {backgroundImage && (
+              <button
+                type="button"
+                onClick={() => setBackgroundImage(null)}
+                className="rounded-md bg-red-900/40 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-900/60"
+              >
+                Remove
+              </button>
+            )}
+          </div>
+          {backgroundImage && (
+            <div className="mt-3">
+              <label className="flex items-center gap-2 text-xs text-slate-400">
+                <span>Opacity: {Math.round(backgroundOpacity * 100)}%</span>
+              </label>
+              <input
+                type="range"
+                min="0.05"
+                max="0.5"
+                step="0.05"
+                value={backgroundOpacity}
+                onChange={(e) => setBackgroundOpacity(Number(e.target.value))}
+                className="mt-1 w-full accent-accent-500"
+              />
+            </div>
+          )}
         </section>
 
         {/* Vault */}

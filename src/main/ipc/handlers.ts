@@ -84,6 +84,7 @@ function buildHandlers(deps: Deps): HandlerMap {
     'settings:getTheme': () => deps.settings.getTheme(),
     'settings:setTheme': async (theme) => {
       await deps.settings.setTheme(theme)
+      deps.windowManager.broadcastThemeChanged(theme)
       return undefined
     },
     'settings:getAutoSave': () => deps.settings.getAutoSave(),
@@ -198,10 +199,8 @@ function buildHandlers(deps: Deps): HandlerMap {
       const secret = deps.encryption.initPassword(req.password)
       try {
         await deps.settings.setEncryption(secret)
+        if (req.hint) await deps.settings.setPasswordHint(req.hint)
       } catch (err) {
-        // Persist failed: roll back the in-memory key so we never end up unlocked
-        // with a salt that was never saved — locking a note in that state would
-        // make it permanently unopenable (the salt to re-derive the key is gone).
         deps.encryption.lockVault()
         throw err
       }
@@ -210,9 +209,9 @@ function buildHandlers(deps: Deps): HandlerMap {
     'vault:unlock': async (req) => {
       const secret = await deps.settings.getEncryption()
       if (secret === null) throw new Error('no-password')
-      // Returns false (not throws) on a wrong password so the renderer can retry.
       return deps.encryption.unlock(req.password, secret)
     },
+    'vault:getPasswordHint': () => deps.settings.getPasswordHint(),
     'vault:lockVault': () => {
       deps.encryption.lockVault()
       return undefined
@@ -443,6 +442,7 @@ export function registerIpcHandlers(ipc: IpcMain, deps: Deps): void {
   register(ipc, 'vault:hasPassword', handlers['vault:hasPassword'])
   register(ipc, 'vault:setPassword', handlers['vault:setPassword'])
   register(ipc, 'vault:unlock', handlers['vault:unlock'])
+  register(ipc, 'vault:getPasswordHint', handlers['vault:getPasswordHint'])
   register(ipc, 'vault:lockVault', handlers['vault:lockVault'])
   register(ipc, 'vault:isVaultUnlocked', handlers['vault:isVaultUnlocked'])
   register(ipc, 'vault:isLocked', handlers['vault:isLocked'])

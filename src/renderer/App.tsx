@@ -1,4 +1,5 @@
 import { ConfirmDialog } from '@renderer/components/ConfirmDialog'
+import { PatchNotesModal } from '@renderer/components/PatchNotes'
 import { ContentPane } from '@renderer/components/ContentPane'
 import { EmptyState } from '@renderer/components/EmptyState'
 import { ImportWizard } from '@renderer/components/ImportWizard'
@@ -11,6 +12,7 @@ import { UnlockDialog } from '@renderer/components/UnlockDialog'
 import { useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { useSearchStore } from '@renderer/stores/searchStore'
 import { useThemeStore } from '@renderer/stores/themeStore'
+import { BackgroundLayer } from '@renderer/components/BackgroundLayer'
 import { useVaultStore } from '@renderer/stores/vaultStore'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { useEffect, useState } from 'react'
@@ -110,7 +112,8 @@ function MainApp() {
   }, [loadFiles])
 
   return (
-    <div className="flex h-screen flex-col font-sans">
+    <div className="relative flex h-screen flex-col font-sans">
+      <BackgroundLayer />
       <TitleBar />
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{renderBody()}</div>
 
@@ -142,6 +145,7 @@ function MainApp() {
       />
 
       <UnlockDialog />
+      <PatchNotesModal />
 
       {/* First-run import offer (Epic 15): shown once after the first vault pick. */}
       {offerFirstRunImport && vaultPath !== null && (

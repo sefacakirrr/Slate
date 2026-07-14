@@ -32,6 +32,8 @@ type SettingsData = {
    * EncryptionService memory for the session.
    */
   encryption: VaultSecret | null
+  /** User-provided hint shown after a wrong password attempt. */
+  passwordHint: string | null
   /** Pinned sticky notes with their window geometry (Epic 11). */
   stickies: StickyRecord[]
   /** Auto-save the active note after a short debounce (Epic 13). */
@@ -50,6 +52,7 @@ const DEFAULTS: SettingsData = {
   workspace: { openTabs: [], activeTab: null },
   theme: 'dark',
   encryption: null,
+  passwordHint: null,
   stickies: [],
   autoSave: true,
   noteOrder: {},
@@ -145,6 +148,16 @@ export class SettingsService {
   async setEncryption(encryption: VaultSecret): Promise<void> {
     const data = await this.load()
     await this.persist({ ...data, encryption })
+  }
+
+  async getPasswordHint(): Promise<string | null> {
+    const data = await this.load()
+    return data.passwordHint ?? null
+  }
+
+  async setPasswordHint(hint: string | null): Promise<void> {
+    const data = await this.load()
+    await this.persist({ ...data, passwordHint: hint })
   }
 
   /** The pinned sticky notes (path + geometry), or [] if none. */

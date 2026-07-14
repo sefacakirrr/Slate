@@ -1,4 +1,4 @@
-import { RangeSetBuilder } from '@codemirror/state'
+import { type ChangeSpec, EditorSelection, EditorState, RangeSetBuilder } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
@@ -238,6 +238,25 @@ class ImageWidget extends WidgetType {
       e.preventDefault()
       if (this.width === null) return
       replaceImageSource(view, this.from, this.to, serializeImage(this.path, this.alt, null))
+    })
+
+    // Click on the image wrapper places the cursor on the line below.
+    // If the image is the last line, insert a blank line first.
+    wrapper.addEventListener('mousedown', (e) => {
+      if ((e.target as HTMLElement).closest('.cm-widget-delete, .cm-image-resize')) return
+      e.preventDefault()
+      const line = view.state.doc.lineAt(this.from)
+      const isLastLine = line.to === view.state.doc.length
+      if (isLastLine) {
+        view.dispatch({
+          changes: { from: line.to, insert: '\n' },
+          selection: { anchor: line.to + 1 },
+        })
+      } else {
+        const nextLine = view.state.doc.line(line.number + 1)
+        view.dispatch({ selection: { anchor: nextLine.from } })
+      }
+      view.focus()
     })
 
     // Hover affordance on the image frame (not the full-width wrapper): a
@@ -581,7 +600,11 @@ function buildDecorations(view: EditorView): DecorationSet {
       widget = new FileWidget(link.name, ext, link.path, line.from, line.to)
     }
 
-    builder.add(line.from, line.to, Decoration.replace({ widget }))
+    builder.add(
+      line.from,
+      line.to,
+      Decoration.replace({ widget, inclusiveStart: true, inclusiveEnd: true }),
+    )
   }
 
   return builder.finish()
@@ -610,6 +633,55 @@ const imagePlugin = ViewPlugin.fromClass(
   },
 )
 
+/**
+ * Checks whether a position falls inside an image/attachment line by testing
+ * only the target line (no full-document scan).
+ */
+function isImageLine(state: EditorState, pos: number) {
+  if (pos < 0 || pos > state.doc.length) return null
+  const line = state.doc.lineAt(pos)
+  const lineText = state.doc.sliceString(line.from, line.to)
+  const trimmed = lineText.trim()
+  if (!trimmed) return null
+  if (IMAGE_RE.test(trimmed) || HTML_IMG_RE.test(trimmed)) {
+    IMAGE_RE.lastIndex = 0
+    HTML_IMG_RE.lastIndex = 0
+    return line
+  }
+  IMAGE_RE.lastIndex = 0
+  HTML_IMG_RE.lastIndex = 0
+  return null
+}
+
+/**
+ * Transaction filter that prevents typing into image lines.
+ * If a change targets an image line, it is redirected to a new line below
+ * and the cursor moves there so subsequent keystrokes land in the right place.
+ */
+const imageGuardFilter = EditorState.transactionFilter.of((tr) => {
+  if (!tr.docChanged) return tr
+  const changes: ChangeSpec[] = []
+  let blocked = false
+  let cursorPos = 0
+  tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+    const imgLine = isImageLine(tr.startState, fromA)
+    if (imgLine && fromA === toA && inserted.length > 0) {
+      blocked = true
+      const insertText = inserted.toString()
+      changes.push({ from: imgLine.to, insert: `\n${insertText}` })
+      cursorPos = imgLine.to + 1 + insertText.length
+    } else {
+      changes.push({ from: fromA, to: toA, insert: inserted })
+    }
+  })
+  if (!blocked) return tr
+  return {
+    changes,
+    sequential: true,
+    selection: EditorSelection.cursor(cursorPos),
+  }
+})
+
 export function imageWidgetExtension() {
-  return imagePlugin
+  return [imagePlugin, imageGuardFilter]
 }

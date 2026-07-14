@@ -59,9 +59,11 @@ export type IpcCommands = {
   /** Whether a vault password has been set (Epic 10). */
   'vault:hasPassword': { request: undefined; response: boolean }
   /** First-time vault password setup. Rejects if one already exists. */
-  'vault:setPassword': { request: { password: string }; response: undefined }
+  'vault:setPassword': { request: { password: string; hint?: string }; response: undefined }
   /** Unlock the vault for this session. Resolves true on success, false on a wrong password. */
   'vault:unlock': { request: { password: string }; response: boolean }
+  /** Returns the user-set password hint, or null if none. */
+  'vault:getPasswordHint': { request: undefined; response: string | null }
   /** Clear the session key — the vault re-locks immediately. */
   'vault:lockVault': { request: undefined; response: undefined }
   /** Whether the vault is currently unlocked (a session key is held). */
@@ -169,8 +171,9 @@ export type Api = {
     renameNote: (req: { from: string; to: string }) => Promise<IpcResult<undefined>>
     renameFolder: (req: { from: string; to: string }) => Promise<IpcResult<undefined>>
     hasPassword: () => Promise<IpcResult<boolean>>
-    setPassword: (req: { password: string }) => Promise<IpcResult<undefined>>
+    setPassword: (req: { password: string; hint?: string }) => Promise<IpcResult<undefined>>
     unlock: (req: { password: string }) => Promise<IpcResult<boolean>>
+    getPasswordHint: () => Promise<IpcResult<string | null>>
     lockVault: () => Promise<IpcResult<undefined>>
     isVaultUnlocked: () => Promise<IpcResult<boolean>>
     isLocked: (path: string) => Promise<IpcResult<boolean>>
@@ -211,6 +214,7 @@ export type Api = {
     /** One note's content changed on disk (Epic 11); payload is the note path. */
     onNoteChanged: (cb: (path: string) => void) => () => void
     onConfirmClose: (cb: () => void) => () => void
+    onThemeChanged: (cb: (theme: string) => void) => () => void
     /** Sticky-note windows (Epic 11). */
     sticky: {
       open: (path: string) => Promise<IpcResult<undefined>>

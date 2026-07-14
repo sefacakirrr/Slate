@@ -64,6 +64,12 @@ type WorkspaceState = {
    * or the disk content already matches (e.g. this window's own save).
    */
   reloadTab: (path: string) => Promise<string | null>
+  /** Closes all tabs except the specified one (skips dirty tabs). */
+  closeOtherTabs: (path: string) => void
+  /** Closes tabs to the right of the specified one (skips dirty tabs). */
+  closeTabsToRight: (path: string) => void
+  /** Closes all tabs (skips dirty tabs). */
+  closeAllTabs: () => void
   /** Closes all tabs whose paths are inside the given folder (no dirty check). */
   closeFolderTabs: (folderPath: string) => void
 }
@@ -181,6 +187,32 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       pendingClose: pendingClose === path ? null : pendingClose,
     })
     persistWorkspace(next, active)
+  },
+
+  closeOtherTabs: (path) => {
+    const { tabs, activeTabPath } = get()
+    const keep = tabs.filter((t) => t.path === path || t.dirty)
+    const active = keep.find((t) => t.path === activeTabPath) ? activeTabPath : path
+    set({ tabs: keep, activeTabPath: active })
+    persistWorkspace(keep, active)
+  },
+
+  closeTabsToRight: (path) => {
+    const { tabs, activeTabPath } = get()
+    const idx = tabs.findIndex((t) => t.path === path)
+    if (idx === -1) return
+    const keep = tabs.filter((t, i) => i <= idx || t.dirty)
+    const active = keep.find((t) => t.path === activeTabPath) ? activeTabPath : path
+    set({ tabs: keep, activeTabPath: active })
+    persistWorkspace(keep, active)
+  },
+
+  closeAllTabs: () => {
+    const { tabs } = get()
+    const keep = tabs.filter((t) => t.dirty)
+    const active = keep.length > 0 ? keep[0].path : null
+    set({ tabs: keep, activeTabPath: active })
+    persistWorkspace(keep, active)
   },
 
   setTabDraft: (path, draft) => {

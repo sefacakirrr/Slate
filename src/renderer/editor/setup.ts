@@ -1,75 +1,69 @@
+import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting } from '@codemirror/language'
+import { lintKeymap } from '@codemirror/lint'
+import { highlightSelectionMatches, searchKeymap } from '@codemirror/search'
 import { Compartment, EditorState } from '@codemirror/state'
-import { keymap } from '@codemirror/view'
+import {
+  crosshairCursor,
+  drawSelection,
+  dropCursor,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  highlightSpecialChars,
+  keymap,
+  lineNumbers,
+  rectangularSelection,
+} from '@codemirror/view'
+import { BUILTIN_THEMES, type ColorTheme, buildEditorTheme } from '@renderer/editor/colorThemes'
 import { attachmentExtension } from '@renderer/editor/attachments'
 import { checkboxWidgetExtension } from '@renderer/editor/checkboxWidget'
 import { setAlignment, toggleFormat } from '@renderer/editor/formatting'
 import { highlightExtension } from '@renderer/editor/highlight'
 import { imageWidgetExtension } from '@renderer/editor/imageWidget'
 import { languageExtension } from '@renderer/editor/language'
-import { basicSetup, EditorView } from 'codemirror'
+import { lineFoldExtension } from '@renderer/editor/lineFold'
+import { EditorView } from 'codemirror'
 
-const darkTheme = EditorView.theme(
-  {
-    '&': {
-      height: '100%',
-      backgroundColor: '#0a0e1a',
-      color: '#cbd5e1',
-      fontSize: '13px',
-    },
-    '.cm-content': {
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-      padding: '12px 0',
-      caretColor: '#a78bfa',
-    },
-    '.cm-gutters': {
-      backgroundColor: '#0a0e1a',
-      color: '#475569',
-      border: 'none',
-    },
-    '.cm-activeLine': { backgroundColor: '#131a2b66' },
-    '.cm-activeLineGutter': { backgroundColor: '#131a2b66', color: '#94a3b8' },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#a78bfa' },
-    '.cm-selectionBackground': { backgroundColor: '#8b5cf633' },
-    '&.cm-focused .cm-selectionBackground': { backgroundColor: '#8b5cf64d' },
-    '&.cm-focused': { outline: 'none' },
-    '.cm-scroller': { overflow: 'auto' },
-  },
-  { dark: true },
-)
+/**
+ * Same as codemirror's basicSetup but WITHOUT foldGutter and foldKeymap.
+ * We use our own line-collapse mechanism instead.
+ */
+const editorSetup = [
+  lineNumbers(),
+  highlightActiveLineGutter(),
+  highlightSpecialChars(),
+  history(),
+  drawSelection(),
+  dropCursor(),
+  EditorState.allowMultipleSelections.of(true),
+  indentOnInput(),
+  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+  bracketMatching(),
+  closeBrackets(),
+  autocompletion(),
+  rectangularSelection(),
+  crosshairCursor(),
+  highlightActiveLine(),
+  highlightSelectionMatches(),
+  keymap.of([
+    ...closeBracketsKeymap,
+    ...defaultKeymap,
+    ...searchKeymap,
+    ...historyKeymap,
+    ...completionKeymap,
+    ...lintKeymap,
+  ]),
+]
 
-const lightTheme = EditorView.theme(
-  {
-    '&': {
-      height: '100%',
-      backgroundColor: '#ffffff',
-      color: '#1e293b',
-      fontSize: '13px',
-    },
-    '.cm-content': {
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-      padding: '12px 0',
-      caretColor: '#6d28d9',
-    },
-    '.cm-gutters': {
-      backgroundColor: '#f8fafc',
-      color: '#94a3b8',
-      border: 'none',
-    },
-    '.cm-activeLine': { backgroundColor: '#f1f5f922' },
-    '.cm-activeLineGutter': { backgroundColor: '#f1f5f9', color: '#64748b' },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#6d28d9' },
-    '.cm-selectionBackground': { backgroundColor: '#8b5cf620' },
-    '&.cm-focused .cm-selectionBackground': { backgroundColor: '#8b5cf630' },
-    '&.cm-focused': { outline: 'none' },
-    '.cm-scroller': { overflow: 'auto' },
-  },
-  { dark: false },
-)
+const defaultDark = BUILTIN_THEMES.find((t) => t.id === 'default-dark')!
+const defaultLight = BUILTIN_THEMES.find((t) => t.id === 'default-light')!
 
 export const themeCompartment = new Compartment()
 
-export function getEditorTheme(resolved: 'dark' | 'light') {
-  return resolved === 'dark' ? darkTheme : lightTheme
+export function getEditorTheme(resolved: 'dark' | 'light', colorTheme?: ColorTheme) {
+  if (colorTheme) return buildEditorTheme(colorTheme)
+  return resolved === 'dark' ? buildEditorTheme(defaultDark) : buildEditorTheme(defaultLight)
 }
 
 export type TabStateOptions = {
@@ -83,15 +77,14 @@ export function createTabState(opts: TabStateOptions, resolved: 'dark' | 'light'
   return EditorState.create({
     doc: opts.doc,
     extensions: [
-      basicSetup,
-      // Wrap long lines onto the next visual row instead of scrolling
-      // horizontally. Wrapped task lines continue under the checkbox.
+      editorSetup,
       EditorView.lineWrapping,
       themeCompartment.of(getEditorTheme(resolved)),
       languageExtension(opts.path),
       attachmentExtension(),
       imageWidgetExtension(),
       checkboxWidgetExtension(),
+      lineFoldExtension(),
       highlightExtension,
       EditorView.updateListener.of((update) => {
         if (update.docChanged) opts.onDocChange(update.state.doc.toString())

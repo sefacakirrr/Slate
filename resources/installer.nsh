@@ -19,6 +19,14 @@
       DeleteRegKey ${ROOT_KEY} "${INSTALL_REGISTRY_KEY}"
     ${EndIf}
   ${EndIf}
+  ; Also clean registry if the install location drive no longer exists
+  ${If} $R0 != ""
+    StrCpy $R1 $R0 3
+    ${IfNot} ${FileExists} "$R1"
+      DeleteRegKey ${ROOT_KEY} "${UNINSTALL_REGISTRY_KEY}"
+      DeleteRegKey ${ROOT_KEY} "${INSTALL_REGISTRY_KEY}"
+    ${EndIf}
+  ${EndIf}
 !macroend
 
 !macro customInit

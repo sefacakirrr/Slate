@@ -43,7 +43,7 @@ type EncryptionState = {
   /** Clears the session key immediately — locked notes re-prompt. */
   lockVaultNow: () => Promise<void>
   /** Submits the prompt's password (unlock or set). */
-  submitPassword: (password: string) => Promise<void>
+  submitPassword: (password: string, hint?: string) => Promise<void>
   /** Dismisses the prompt without acting. */
   cancelPrompt: () => void
 }
@@ -124,13 +124,13 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
     set({ unlocked: false })
   },
 
-  submitPassword: async (password) => {
+  submitPassword: async (password, hint?) => {
     const prompt = get().prompt
     if (prompt === null || password.length === 0) return
     set({ busy: true, promptError: null })
 
     if (prompt.mode === 'set') {
-      const result = await api.vault.setPassword({ password })
+      const result = await api.vault.setPassword({ password, hint })
       set({ busy: false })
       if (!result.ok) {
         set({ promptError: result.error })
