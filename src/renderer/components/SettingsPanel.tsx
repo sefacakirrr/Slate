@@ -478,6 +478,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 Update check failed: {update.error}
               </span>
             )}
+            <p className="mt-2 text-[11px] text-slate-600 light:text-slate-400">
+              Updates are installed silently — no setup wizards. App restarts automatically.
+            </p>
           </div>
         </section>
       </div>
