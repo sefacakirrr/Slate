@@ -20,11 +20,17 @@ export function TabBar() {
   const activateTab = useWorkspaceStore((s) => s.activateTab)
   const closeTab = useWorkspaceStore((s) => s.closeTab)
   const closeOtherTabs = useWorkspaceStore((s) => s.closeOtherTabs)
+  const closeTabsToLeft = useWorkspaceStore((s) => s.closeTabsToLeft)
   const closeTabsToRight = useWorkspaceStore((s) => s.closeTabsToRight)
   const closeAllTabs = useWorkspaceStore((s) => s.closeAllTabs)
+  const reorderTab = useWorkspaceStore((s) => s.reorderTab)
 
   const [menu, setMenu] = useState<MenuPos>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  // Drag state
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
 
   const handleContextMenu = useCallback((e: React.MouseEvent, path: string) => {
     e.preventDefault()
@@ -47,25 +53,64 @@ export function TabBar() {
     }
   }, [menu])
 
+  const handleDragStart = useCallback((e: React.DragEvent, idx: number) => {
+    setDragIdx(idx)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(idx))
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent, idx: number) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverIdx(idx)
+  }, [])
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent, targetIdx: number) => {
+      e.preventDefault()
+      if (dragIdx !== null && dragIdx !== targetIdx) {
+        reorderTab(dragIdx, targetIdx)
+      }
+      setDragIdx(null)
+      setDragOverIdx(null)
+    },
+    [dragIdx, reorderTab],
+  )
+
+  const handleDragEnd = useCallback(() => {
+    setDragIdx(null)
+    setDragOverIdx(null)
+  }, [])
+
   if (tabs.length === 0) return null
 
   const menuTabIdx = menu ? tabs.findIndex((t) => t.path === menu.path) : -1
+  const hasTabsToLeft = menuTabIdx > 0
   const hasTabsToRight = menuTabIdx >= 0 && menuTabIdx < tabs.length - 1
 
   return (
-    <div className="relative flex min-w-0 items-stretch border-b border-slate-800 bg-slate-900 light:border-slate-200 light:bg-slate-50">
-      {tabs.map((tab) => {
+    <div className="relative flex min-w-0 items-stretch overflow-x-auto border-b border-slate-800 bg-slate-900 light:border-slate-200 light:bg-slate-50">
+      {tabs.map((tab, idx) => {
         const name = tabLabel(tab.path)
         const active = tab.path === activeTabPath
+        const isDragging = dragIdx === idx
+        const isDragOver = dragOverIdx === idx && dragIdx !== idx
         return (
           <div
             key={tab.path}
+            role="tab"
+            tabIndex={active ? 0 : -1}
+            draggable
+            onDragStart={(e) => handleDragStart(e, idx)}
+            onDragOver={(e) => handleDragOver(e, idx)}
+            onDrop={(e) => handleDrop(e, idx)}
+            onDragEnd={handleDragEnd}
             onContextMenu={(e) => handleContextMenu(e, tab.path)}
-            className={`group flex min-w-0 max-w-[200px] flex-1 items-center gap-1.5 border-r border-t-2 border-r-slate-800 py-1.5 pl-3 pr-1.5 text-xs transition light:border-r-slate-200 ${
+            className={`group flex min-w-0 max-w-[180px] flex-shrink-0 items-center gap-1.5 border-r border-t-2 border-r-slate-800 py-1.5 pl-3 pr-1.5 text-xs transition-colors duration-200 light:border-r-slate-200 ${
               active
                 ? 'border-t-accent-500 bg-slate-950 text-slate-100 light:bg-white light:text-slate-900'
                 : 'border-t-transparent text-slate-400 hover:bg-slate-800/70 hover:text-slate-200 light:text-slate-500 light:hover:bg-white light:hover:text-slate-700'
-            }`}
+            } ${isDragging ? 'opacity-40' : ''} ${isDragOver ? 'border-l-2 border-l-accent-500' : ''}`}
           >
             <button
               type="button"
@@ -105,6 +150,11 @@ export function TabBar() {
             label="Close Others"
             onClick={() => { closeOtherTabs(menu.path); setMenu(null) }}
             disabled={tabs.length <= 1}
+          />
+          <ContextMenuItem
+            label="Close to the Left"
+            onClick={() => { closeTabsToLeft(menu.path); setMenu(null) }}
+            disabled={!hasTabsToLeft}
           />
           <ContextMenuItem
             label="Close to the Right"

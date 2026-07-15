@@ -8,10 +8,8 @@ import {
   WidgetType,
 } from '@codemirror/view'
 
-// Capture: leading indent, bullet + space, the [ ] state, and an optional
-// trailing space. The whole `- [ ] ` run (minus leading indent) is replaced by
-// the checkbox widget so no inline marker remains in the text flow.
 const TASK_RE = /^(\s*)([-*+] )\[([ xX])\]( ?)/gm
+const COMPLETED_TS_RE = / ✓ \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/
 
 type TaskMatch = {
   from: number
@@ -30,7 +28,6 @@ function findTasks(doc: string): TaskMatch[] {
     const bullet = match[2]
     const trailing = match[4]
     const bulletStart = fullStart + leadingWs.length
-    // `- [ ] `: bullet(2) `[`(1) state(1) `]`(1) + optional space.
     const checkPos = bulletStart + bullet.length + 1
     const to = bulletStart + bullet.length + 3 + trailing.length
     results.push({
@@ -44,6 +41,34 @@ function findTasks(doc: string): TaskMatch[] {
   }
   TASK_RE.lastIndex = 0
   return results
+}
+
+function formatTimestamp(): string {
+  const now = new Date()
+  const dd = String(now.getDate()).padStart(2, '0')
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const yyyy = now.getFullYear()
+  const hh = String(now.getHours()).padStart(2, '0')
+  const min = String(now.getMinutes()).padStart(2, '0')
+  return `${dd}.${mm}.${yyyy} ${hh}:${min}`
+}
+
+function getContiguousTaskBlock(
+  doc: { lines: number; line: (n: number) => { text: string; from: number; to: number } },
+  lineNumber: number,
+): { startLine: number; endLine: number } {
+  let startLine = lineNumber
+  let endLine = lineNumber
+
+  for (let n = lineNumber - 1; n >= 1; n--) {
+    if (/^\s*[-*+] \[[ xX]\]/.test(doc.line(n).text)) startLine = n
+    else break
+  }
+  for (let n = lineNumber + 1; n <= doc.lines; n++) {
+    if (/^\s*[-*+] \[[ xX]\]/.test(doc.line(n).text)) endLine = n
+    else break
+  }
+  return { startLine, endLine }
 }
 
 class CheckboxWidget extends WidgetType {
@@ -61,9 +86,6 @@ class CheckboxWidget extends WidgetType {
   }
 
   toDOM(view: EditorView): HTMLElement {
-    // Outer wrapper: pulled out of the text flow into the left gutter so the
-    // editable text wraps cleanly to its right with a hanging indent. Its
-    // height matches one line so the box vertically centres on the first row.
     const wrap = document.createElement('span')
     wrap.className = 'cm-checkbox-widget'
     wrap.style.position = 'absolute'
@@ -107,14 +129,56 @@ class CheckboxWidget extends WidgetType {
     }
 
     const checkPos = this.checkPos
-    const checked = this.checked
     wrap.addEventListener('mousedown', (e) => {
       e.preventDefault()
       e.stopPropagation()
-      const newChar = checked ? ' ' : 'x'
-      view.dispatch({
-        changes: { from: checkPos, to: checkPos + 1, insert: newChar },
-      })
+
+      // Re-locate the line at click time using current doc state
+      const doc = view.state.doc
+      if (checkPos >= doc.length) return
+      const line = doc.lineAt(checkPos)
+
+      // Verify this line is still a task item
+      const lineMatch = /^(\s*)([-*+] )\[([ xX])\]/.exec(line.text)
+      if (!lineMatch) return
+      const isChecked = lineMatch[3] !== ' '
+
+      const { startLine, endLine } = getContiguousTaskBlock(doc, line.number)
+
+      if (startLine === endLine) {
+        if (!isChecked) {
+          const toggled = `${line.text.replace(/\[ \]/, '[x]')} ✓ ${formatTimestamp()}`
+          view.dispatch({ changes: { from: line.from, to: line.to, insert: toggled } })
+        } else {
+          const toggled = line.text.replace(/\[x\]/i, '[ ]').replace(COMPLETED_TS_RE, '')
+          view.dispatch({ changes: { from: line.from, to: line.to, insert: toggled } })
+        }
+        return
+      }
+
+      // Build sorted result
+      const allLines: string[] = []
+      for (let n = startLine; n <= endLine; n++) {
+        allLines.push(doc.line(n).text)
+      }
+      const currentIdx = line.number - startLine
+      if (!isChecked) {
+        allLines[currentIdx] = `${allLines[currentIdx].replace(/\[ \]/, '[x]')} ✓ ${formatTimestamp()}`
+      } else {
+        allLines[currentIdx] = allLines[currentIdx].replace(/\[x\]/i, '[ ]').replace(COMPLETED_TS_RE, '')
+      }
+
+      const uncheckedList: string[] = []
+      const checkedList: string[] = []
+      for (const l of allLines) {
+        if (/^\s*[-*+] \[[ ]\]/.test(l)) uncheckedList.push(l)
+        else checkedList.push(l)
+      }
+      const sorted = [...checkedList, ...uncheckedList]
+
+      const blockFrom = doc.line(startLine).from
+      const blockTo = doc.line(endLine).to
+      view.dispatch({ changes: { from: blockFrom, to: blockTo, insert: sorted.join('\n') } })
     })
 
     return wrap
@@ -125,12 +189,13 @@ class CheckboxWidget extends WidgetType {
   }
 }
 
-// Line decorations give the task line its hanging-indent column (padding-left)
-// and a positioning context for the absolutely placed checkbox.
 const taskLineDeco = Decoration.line({ attributes: { class: 'cm-task-line' } })
 const taskLineCheckedDeco = Decoration.line({
   attributes: { class: 'cm-task-line cm-task-checked' },
 })
+const timestampMark = Decoration.mark({ attributes: { class: 'cm-task-timestamp' } })
+
+const TIMESTAMP_INLINE_RE = / ✓ \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/
 
 function buildDecorations(view: EditorView): DecorationSet {
   const doc = view.state.doc.toString()
@@ -149,10 +214,18 @@ function buildDecorations(view: EditorView): DecorationSet {
       deco: task.checked ? taskLineCheckedDeco : taskLineDeco,
     })
     sorted.push({ pos: task.from, end: task.to, deco: Decoration.replace({ widget }) })
+
+    if (task.checked) {
+      const lineText = line.text
+      const tsMatch = TIMESTAMP_INLINE_RE.exec(lineText)
+      if (tsMatch) {
+        const tsFrom = line.from + tsMatch.index
+        const tsTo = line.from + tsMatch.index + tsMatch[0].length
+        sorted.push({ pos: tsFrom, end: tsTo, deco: timestampMark })
+      }
+    }
   }
 
-  // Line decorations (end === pos) must precede the replace range at the same
-  // offset; sorting by pos then end guarantees that.
   sorted.sort((a, b) => a.pos - b.pos || a.end - b.end)
   for (const s of sorted) {
     builder.add(s.pos, s.end, s.deco)

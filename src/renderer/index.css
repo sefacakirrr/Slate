@@ -75,6 +75,14 @@ body {
   text-decoration: line-through;
   text-decoration-color: #64748b;
 }
+.cm-task-timestamp {
+  font-weight: 600;
+  color: #8b5cf6;
+  opacity: 1;
+}
+.light .cm-task-timestamp {
+  color: #7c3aed;
+}
 
 /* Spinner animation for file widget loading state. */
 @keyframes cm-spin {

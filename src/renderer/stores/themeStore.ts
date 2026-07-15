@@ -7,6 +7,8 @@ const CUSTOM_THEMES_KEY = 'slate:customThemes'
 const COLOR_THEME_KEY = 'slate:colorThemeId'
 const BG_IMAGE_KEY = 'slate:backgroundImage'
 const BG_OPACITY_KEY = 'slate:backgroundOpacity'
+const BG_POSITION_KEY = 'slate:backgroundPosition'
+const BG_SCALE_KEY = 'slate:backgroundScale'
 
 type ThemeState = {
   theme: ThemeMode
@@ -15,6 +17,8 @@ type ThemeState = {
   customThemes: ColorTheme[]
   backgroundImage: string | null
   backgroundOpacity: number
+  backgroundPosition: number
+  backgroundScale: number
   loadTheme: () => Promise<void>
   setTheme: (theme: ThemeMode) => Promise<void>
   applyFromExternal: (theme: ThemeMode) => void
@@ -23,6 +27,8 @@ type ThemeState = {
   removeCustomTheme: (id: string) => void
   setBackgroundImage: (dataUrl: string | null) => void
   setBackgroundOpacity: (opacity: number) => void
+  setBackgroundPosition: (position: number) => void
+  setBackgroundScale: (scale: number) => void
   allThemes: () => ColorTheme[]
   getActiveColorTheme: () => ColorTheme
 }
@@ -60,6 +66,8 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   customThemes: loadCustomThemes(),
   backgroundImage: localStorage.getItem(BG_IMAGE_KEY),
   backgroundOpacity: Number(localStorage.getItem(BG_OPACITY_KEY)) || 0.15,
+  backgroundPosition: Number(localStorage.getItem(BG_POSITION_KEY)) || 50,
+  backgroundScale: Number(localStorage.getItem(BG_SCALE_KEY)) || 100,
 
   loadTheme: async () => {
     const result = await api.settings.getTheme()
@@ -127,6 +135,16 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   setBackgroundOpacity: (opacity) => {
     localStorage.setItem(BG_OPACITY_KEY, String(opacity))
     set({ backgroundOpacity: opacity })
+  },
+
+  setBackgroundPosition: (position) => {
+    localStorage.setItem(BG_POSITION_KEY, String(position))
+    set({ backgroundPosition: position })
+  },
+
+  setBackgroundScale: (scale) => {
+    localStorage.setItem(BG_SCALE_KEY, String(scale))
+    set({ backgroundScale: scale })
   },
 
   allThemes: () => [...BUILTIN_THEMES, ...get().customThemes],

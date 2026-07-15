@@ -106,9 +106,9 @@ export class UpdateService {
     }
   }
 
-  /** Windows: install the downloaded update and relaunch. */
+  /** Windows: silently install the downloaded update and relaunch. */
   install(): void {
-    autoUpdater.quitAndInstall()
+    autoUpdater.quitAndInstall(true, true)
   }
 
   /** macOS: open the GitHub Releases page (or any provided URL) in the browser. */

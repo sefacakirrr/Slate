@@ -1,4 +1,5 @@
 import { api } from '@renderer/api'
+import { BackgroundPositionModal } from '@renderer/components/BackgroundPositionModal'
 import { ImportWizard } from '@renderer/components/ImportWizard'
 import { useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { useThemeStore } from '@renderer/stores/themeStore'
@@ -29,6 +30,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const backgroundOpacity = useThemeStore((s) => s.backgroundOpacity)
   const setBackgroundImage = useThemeStore((s) => s.setBackgroundImage)
   const setBackgroundOpacity = useThemeStore((s) => s.setBackgroundOpacity)
+  const backgroundPosition = useThemeStore((s) => s.backgroundPosition)
+  const setBackgroundPosition = useThemeStore((s) => s.setBackgroundPosition)
+  const backgroundScale = useThemeStore((s) => s.backgroundScale)
+  const setBackgroundScale = useThemeStore((s) => s.setBackgroundScale)
   const hasPassword = useEncryptionStore((s) => s.hasPassword)
   const unlocked = useEncryptionStore((s) => s.unlocked)
   const beginSetPassword = useEncryptionStore((s) => s.beginSetPassword)
@@ -40,6 +45,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [rebuildStatus, setRebuildStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [update, setUpdate] = useState<UpdateState | { status: 'idle' }>({ status: 'idle' })
   const [showImport, setShowImport] = useState(false)
+  const [pendingBgImage, setPendingBgImage] = useState<string | null>(null)
 
   // Subscribe to update-state pushes from main (Epic 12).
   useEffect(() => api.update.onState(setUpdate), [])
@@ -163,7 +169,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   const file = input.files?.[0]
                   if (!file) return
                   const reader = new FileReader()
-                  reader.onload = () => setBackgroundImage(reader.result as string)
+                  reader.onload = () => setPendingBgImage(reader.result as string)
                   reader.readAsDataURL(file)
                 }
                 input.click()
@@ -183,19 +189,26 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             )}
           </div>
           {backgroundImage && (
-            <div className="mt-3">
-              <label className="flex items-center gap-2 text-xs text-slate-400">
+            <div className="mt-3 space-y-3">
+              <label className="block text-xs text-slate-400">
                 <span>Opacity: {Math.round(backgroundOpacity * 100)}%</span>
+                <input
+                  type="range"
+                  min="0.05"
+                  max="0.5"
+                  step="0.05"
+                  value={backgroundOpacity}
+                  onChange={(e) => setBackgroundOpacity(Number(e.target.value))}
+                  className="mt-1 w-full accent-accent-500"
+                />
               </label>
-              <input
-                type="range"
-                min="0.05"
-                max="0.5"
-                step="0.05"
-                value={backgroundOpacity}
-                onChange={(e) => setBackgroundOpacity(Number(e.target.value))}
-                className="mt-1 w-full accent-accent-500"
-              />
+              <button
+                type="button"
+                onClick={() => setPendingBgImage(backgroundImage)}
+                className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
+              >
+                Reposition
+              </button>
             </div>
           )}
         </section>
@@ -470,6 +483,21 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       {showImport && <ImportWizard onClose={() => setShowImport(false)} />}
+
+      {pendingBgImage && (
+        <BackgroundPositionModal
+          imageDataUrl={pendingBgImage}
+          initialPosition={backgroundPosition}
+          initialScale={backgroundScale}
+          onConfirm={(pos, scl) => {
+            setBackgroundImage(pendingBgImage)
+            setBackgroundPosition(pos)
+            setBackgroundScale(scl)
+            setPendingBgImage(null)
+          }}
+          onCancel={() => setPendingBgImage(null)}
+        />
+      )}
     </div>
   )
 }

@@ -66,12 +66,16 @@ type WorkspaceState = {
   reloadTab: (path: string) => Promise<string | null>
   /** Closes all tabs except the specified one (skips dirty tabs). */
   closeOtherTabs: (path: string) => void
+  /** Closes tabs to the left of the specified one (skips dirty tabs). */
+  closeTabsToLeft: (path: string) => void
   /** Closes tabs to the right of the specified one (skips dirty tabs). */
   closeTabsToRight: (path: string) => void
   /** Closes all tabs (skips dirty tabs). */
   closeAllTabs: () => void
   /** Closes all tabs whose paths are inside the given folder (no dirty check). */
   closeFolderTabs: (folderPath: string) => void
+  /** Reorders a tab from one index to another (drag-drop). */
+  reorderTab: (fromIdx: number, toIdx: number) => void
 }
 
 /** Fire-and-forget persistence of the open-tab set + active tab. */
@@ -155,7 +159,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   activateTab: (path) => {
     if (get().tabs.some((t) => t.path === path)) {
       set({ activeTabPath: path })
-      persistWorkspace(get().tabs, get().activeTabPath)
+      persistWorkspace(get().tabs, path)
     }
   },
 
@@ -192,6 +196,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   closeOtherTabs: (path) => {
     const { tabs, activeTabPath } = get()
     const keep = tabs.filter((t) => t.path === path || t.dirty)
+    const active = keep.find((t) => t.path === activeTabPath) ? activeTabPath : path
+    set({ tabs: keep, activeTabPath: active })
+    persistWorkspace(keep, active)
+  },
+
+  closeTabsToLeft: (path) => {
+    const { tabs, activeTabPath } = get()
+    const idx = tabs.findIndex((t) => t.path === path)
+    if (idx === -1) return
+    const keep = tabs.filter((t, i) => i >= idx || t.dirty)
     const active = keep.find((t) => t.path === activeTabPath) ? activeTabPath : path
     set({ tabs: keep, activeTabPath: active })
     persistWorkspace(keep, active)
@@ -339,5 +353,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       : (next[next.length - 1]?.path ?? null)
     set({ tabs: next, activeTabPath: active })
     persistWorkspace(next, active)
+  },
+
+  reorderTab: (fromIdx, toIdx) => {
+    const { tabs, activeTabPath } = get()
+    if (fromIdx < 0 || fromIdx >= tabs.length || toIdx < 0 || toIdx >= tabs.length) return
+    const next = [...tabs]
+    const [moved] = next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, moved)
+    set({ tabs: next })
+    persistWorkspace(next, activeTabPath)
   },
 }))

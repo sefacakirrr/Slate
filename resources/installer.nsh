@@ -32,8 +32,13 @@
 !macro customInit
   ; Kill running Slate instances (and child processes) so no file in the
   ; install directory is locked. Silently no-ops when Slate isn't running.
-  nsExec::Exec 'taskkill /F /IM Slate.exe /T'
+  ; Try multiple times with a short delay to handle slow process shutdown.
+  nsExec::Exec 'taskkill /F /IM "Slate.exe" /T'
   Pop $0
+  nsExec::Exec 'taskkill /F /IM "Slate.exe"'
+  Pop $0
+  ; Wait briefly for file handles to release
+  Sleep 1000
 
   ; Per-user install is the default, but check both hives — the user may have
   ; elevated to an all-users install previously.
@@ -44,6 +49,9 @@
 !macro customUnInit
   ; Same force-close for uninstall: "Slate cannot be closed. Please close it
   ; manually" must never block a user from removing the app.
-  nsExec::Exec 'taskkill /F /IM Slate.exe /T'
+  nsExec::Exec 'taskkill /F /IM "Slate.exe" /T'
   Pop $0
+  nsExec::Exec 'taskkill /F /IM "Slate.exe"'
+  Pop $0
+  Sleep 1000
 !macroend
