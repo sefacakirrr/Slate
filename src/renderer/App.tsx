@@ -8,6 +8,7 @@ import { SearchPanel } from '@renderer/components/SearchPanel'
 import { Sidebar } from '@renderer/components/Sidebar'
 import { StickyNote } from '@renderer/components/StickyNote'
 import { TitleBar } from '@renderer/components/TitleBar'
+import { UpdateBar } from '@renderer/components/UpdateBar'
 import { UnlockDialog } from '@renderer/components/UnlockDialog'
 import { useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { useSearchStore } from '@renderer/stores/searchStore'
@@ -115,6 +116,7 @@ function MainApp() {
     <div className="relative flex h-screen flex-col font-sans">
       <BackgroundLayer />
       <TitleBar />
+      <UpdateBar />
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{renderBody()}</div>
 
       <SearchPanel />
