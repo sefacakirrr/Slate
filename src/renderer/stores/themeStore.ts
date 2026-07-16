@@ -19,6 +19,7 @@ type ThemeState = {
   backgroundOpacity: number
   backgroundPosition: number
   backgroundScale: number
+  fontSize: number
   loadTheme: () => Promise<void>
   setTheme: (theme: ThemeMode) => Promise<void>
   applyFromExternal: (theme: ThemeMode) => void
@@ -29,6 +30,9 @@ type ThemeState = {
   setBackgroundOpacity: (opacity: number) => void
   setBackgroundPosition: (position: number) => void
   setBackgroundScale: (scale: number) => void
+  setFontSize: (size: number) => void
+  increaseFontSize: () => void
+  decreaseFontSize: () => void
   allThemes: () => ColorTheme[]
   getActiveColorTheme: () => ColorTheme
 }
@@ -43,6 +47,10 @@ function resolveTheme(theme: ThemeMode): 'dark' | 'light' {
 function applyTheme(resolved: 'dark' | 'light'): void {
   document.documentElement.classList.toggle('dark', resolved === 'dark')
   document.documentElement.classList.toggle('light', resolved === 'light')
+}
+
+function applyFontSize(size: number): void {
+  document.documentElement.style.fontSize = `${size}px`
 }
 
 function loadCustomThemes(): ColorTheme[] {
@@ -68,6 +76,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   backgroundOpacity: Number(localStorage.getItem(BG_OPACITY_KEY)) || 0.15,
   backgroundPosition: Number(localStorage.getItem(BG_POSITION_KEY)) || 50,
   backgroundScale: Number(localStorage.getItem(BG_SCALE_KEY)) || 100,
+  fontSize: 14,
 
   loadTheme: async () => {
     const result = await api.settings.getTheme()
@@ -75,6 +84,13 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     const resolved = resolveTheme(theme)
     applyTheme(resolved)
     set({ theme, resolved })
+
+    const fsResult = await api.settings.getFontSize()
+    if (fsResult.ok) {
+      const fs = fsResult.data
+      set({ fontSize: fs })
+      applyFontSize(fs)
+    }
 
     if (theme === 'system') {
       const mq = window.matchMedia('(prefers-color-scheme: dark)')
@@ -145,6 +161,21 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   setBackgroundScale: (scale) => {
     localStorage.setItem(BG_SCALE_KEY, String(scale))
     set({ backgroundScale: scale })
+  },
+
+  setFontSize: (size) => {
+    const clamped = Math.min(24, Math.max(11, size))
+    set({ fontSize: clamped })
+    applyFontSize(clamped)
+    void api.settings.setFontSize(clamped)
+  },
+
+  increaseFontSize: () => {
+    get().setFontSize(get().fontSize + 1)
+  },
+
+  decreaseFontSize: () => {
+    get().setFontSize(get().fontSize - 1)
   },
 
   allThemes: () => [...BUILTIN_THEMES, ...get().customThemes],

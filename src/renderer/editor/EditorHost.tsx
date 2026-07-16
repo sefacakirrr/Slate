@@ -16,6 +16,7 @@ export function EditorHost() {
   const openPaths = useWorkspaceStore((s) => s.tabs.map((t) => t.path).join('\n'))
   const resolved = useThemeStore((s) => s.resolved)
   const colorThemeId = useThemeStore((s) => s.colorThemeId)
+  const fontSize = useThemeStore((s) => s.fontSize)
 
   useEffect(() => {
     if (hostRef.current === null) return
@@ -45,6 +46,7 @@ export function EditorHost() {
           onSave: () => void useWorkspaceStore.getState().saveActiveTab(),
         },
         resolved,
+        fontSize,
       )
       statesRef.current.set(activeTabPath, state)
     }
@@ -57,19 +59,19 @@ export function EditorHost() {
     }
   }, [activeTabPath, resolved])
 
-  // Reconfigure theme on all cached tab states when theme or color theme changes.
+  // Reconfigure theme on all cached tab states when theme, color theme, or font size changes.
   useEffect(() => {
     const view = viewRef.current
     if (view === null) return
     const colorTheme = useThemeStore.getState().getActiveColorTheme()
-    const theme = getEditorTheme(resolved, colorTheme)
+    const theme = getEditorTheme(resolved, colorTheme, fontSize)
     view.dispatch({ effects: themeCompartment.reconfigure(theme) })
     for (const [path, state] of statesRef.current) {
       if (path === activeTabPath) continue
       const updated = state.update({ effects: themeCompartment.reconfigure(theme) }).state
       statesRef.current.set(path, updated)
     }
-  }, [resolved, activeTabPath, colorThemeId])
+  }, [resolved, activeTabPath, colorThemeId, fontSize])
 
   useEffect(() => {
     const open = new Set(openPaths === '' ? [] : openPaths.split('\n'))

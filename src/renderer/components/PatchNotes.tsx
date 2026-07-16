@@ -15,6 +15,24 @@ type ReleaseNote = {
  */
 const RELEASES: ReleaseNote[] = [
   {
+    version: '0.1.15',
+    date: '2026-07-16',
+    highlights: [
+      'Takvim ve Hatırlatıcılar: sidebar\'da aylık takvim, günlük notlar, tarih bazlı hatırlatıcılar',
+      'Hatırlatıcı tekrarlama: her gün, her hafta veya her ay otomatik tekrar',
+      'Bildirime tıklayınca uygulama öne gelir ve ilgili not açılır',
+      'Uygulama açılışında kaçırılmış hatırlatıcılar anında bildirilir',
+      'Yazı boyutu ayarı: Settings slider + Ctrl+=/- + Ctrl+Mouse Wheel ile zoom',
+      'Seçili metne font size uygulama (toolbar\'dan 12-48px arası)',
+      'Tüm UI elementleri font boyutuyla orantılı ölçeklenir',
+      'Klasör chevronları animasyonlu açılıp kapanır',
+      'Satır katlama (fold) chevronları büyütüldü ve animasyon eklendi',
+      'Select dropdown chevronları animasyonlu dönüş efekti',
+      'Vault değiştirince tag\'lar doğru şekilde sıfırlanır',
+      'Pencere kapanırken oluşan render frame hatası düzeltildi',
+    ],
+  },
+  {
     version: '0.1.13',
     date: '2026-07-14',
     highlights: [

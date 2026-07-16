@@ -91,11 +91,11 @@ class CheckboxWidget extends WidgetType {
     wrap.style.position = 'absolute'
     wrap.style.left = '0'
     wrap.style.top = '0'
-    wrap.style.height = `${view.defaultLineHeight}px`
+    wrap.style.height = '1lh'
     wrap.style.display = 'inline-flex'
     wrap.style.alignItems = 'center'
     wrap.style.justifyContent = 'center'
-    wrap.style.width = '16px'
+    wrap.style.width = '1.2em'
     wrap.style.cursor = 'pointer'
     wrap.contentEditable = 'false'
 
@@ -103,8 +103,8 @@ class CheckboxWidget extends WidgetType {
     box.style.display = 'inline-flex'
     box.style.alignItems = 'center'
     box.style.justifyContent = 'center'
-    box.style.width = '16px'
-    box.style.height = '16px'
+    box.style.width = '1em'
+    box.style.height = '1em'
     box.style.borderRadius = '50%'
     box.style.border = this.checked ? 'none' : '2px solid #64748b'
     box.style.backgroundColor = this.checked ? '#8b5cf6' : 'transparent'
@@ -114,8 +114,8 @@ class CheckboxWidget extends WidgetType {
 
     if (this.checked) {
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-      svg.setAttribute('width', '10')
-      svg.setAttribute('height', '10')
+      svg.setAttribute('width', '0.6em')
+      svg.setAttribute('height', '0.6em')
       svg.setAttribute('viewBox', '0 0 24 24')
       svg.setAttribute('fill', 'none')
       svg.setAttribute('stroke', 'white')

@@ -184,6 +184,28 @@ function buildDecorations(view: EditorView): DecorationSet {
     })
   }
 
+  // Font size: {size:N}text{/size}
+  const sizeOpenRe = /\{size:(\d+)\}/g
+  let sizeMatch: RegExpExecArray | null = sizeOpenRe.exec(doc)
+  while (sizeMatch !== null) {
+    const closeIdx = doc.indexOf('{/size}', sizeMatch.index + sizeMatch[0].length)
+    if (closeIdx !== -1) {
+      const prefixLen = sizeMatch[0].length
+      const suffixLen = 7
+      const innerFrom = sizeMatch.index + prefixLen
+      const innerTo = closeIdx
+      allReplaces.push({ from: sizeMatch.index, to: innerFrom })
+      allReplaces.push({ from: innerTo, to: innerTo + suffixLen })
+      allMarks.push({
+        from: innerFrom,
+        to: innerTo,
+        style: `font-size: ${sizeMatch[1]}px;`,
+      })
+    }
+    sizeMatch = sizeOpenRe.exec(doc)
+  }
+  sizeOpenRe.lastIndex = 0
+
   // Alignment markers: {align:X} at line start — hide marker, apply line style
   const alignments = findAlignments(doc)
   for (const a of alignments) {

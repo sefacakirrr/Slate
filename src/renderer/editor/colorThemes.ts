@@ -164,14 +164,14 @@ export const BUILTIN_THEMES: ColorTheme[] = [
   },
 ]
 
-export function buildEditorTheme(theme: ColorTheme) {
+export function buildEditorTheme(theme: ColorTheme, fontSize = 14) {
   return EditorView.theme(
     {
       '&': {
         height: '100%',
         backgroundColor: theme.colors.bg,
         color: theme.colors.fg,
-        fontSize: '13px',
+        fontSize: `${fontSize}px`,
       },
       '.cm-content': {
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',

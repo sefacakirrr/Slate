@@ -1,7 +1,9 @@
 import {
+  applyFontSizeInline,
   applyTextColor,
   getLineAlignment,
   removeAllFormatting,
+  removeFontSizeInline,
   removeTextColor,
   setAlignment,
   TEXT_COLORS,
@@ -18,6 +20,7 @@ import {
 } from '@renderer/editor/highlight'
 import type { EditorView } from 'codemirror'
 import {
+  ALargeSmall,
   AlignCenter,
   AlignLeft,
   AlignRight,
@@ -60,7 +63,9 @@ const TEXT_SWATCHES: Record<TextColor, string> = {
   white: '#f1f5f9',
 }
 
-type SubMenu = 'none' | 'bg' | 'text'
+const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48]
+
+type SubMenu = 'none' | 'bg' | 'text' | 'size'
 
 export function HighlightToolbar({ view }: { view: EditorView | null }) {
   const [visible, setVisible] = useState(false)
@@ -258,10 +263,20 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
 
         <button
           type="button"
+          title="Font size"
+          onClick={() => setSubMenu(subMenu === 'size' ? 'none' : 'size')}
+          className={`${btnClass} ${subMenu === 'size' ? 'bg-slate-700 text-slate-100 light:bg-slate-200 light:text-slate-900' : ''}`}
+        >
+          <ALargeSmall className="size-3.5" aria-hidden="true" />
+        </button>
+
+        <button
+          type="button"
           title="Remove all formatting"
           onClick={() => {
             removeHighlight(view)
             removeTextColor(view)
+            removeFontSizeInline(view)
             removeAllFormatting(view)
             setVisible(false)
           }}
@@ -310,6 +325,27 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
               style={{ backgroundColor: TEXT_SWATCHES[color] }}
             >
               <span className="sr-only">Text color {color}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Sub-menu: font sizes */}
+      {subMenu === 'size' && (
+        <div className="flex items-center gap-0.5 px-1">
+          {FONT_SIZES.map((size) => (
+            <button
+              key={size}
+              type="button"
+              title={`${size}px`}
+              onClick={() => {
+                applyFontSizeInline(view, size)
+                setVisible(false)
+                setSubMenu('none')
+              }}
+              className="rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-400 transition hover:bg-accent-600/20 hover:text-accent-300 dark:hover:bg-accent-600/20 light:hover:bg-accent-100 light:text-slate-600 light:hover:text-accent-700"
+            >
+              {size}
             </button>
           ))}
         </div>

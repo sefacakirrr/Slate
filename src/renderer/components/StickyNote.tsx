@@ -108,7 +108,8 @@ export function StickyNote({ notePath }: { notePath: string }) {
   useEffect(() => {
     const view = viewRef.current
     if (view === null) return
-    view.dispatch({ effects: themeCompartment.reconfigure(getEditorTheme(resolved)) })
+    const fs = useThemeStore.getState().fontSize
+    view.dispatch({ effects: themeCompartment.reconfigure(getEditorTheme(resolved, undefined, fs)) })
   }, [resolved])
 
   return (

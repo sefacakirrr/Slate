@@ -25,6 +25,8 @@ const api: Api = {
     setAutoSave: (autoSave) => invoke('settings:setAutoSave', autoSave),
     getNoteOrder: () => invoke('settings:getNoteOrder'),
     setNoteOrder: (req) => invoke('settings:setNoteOrder', req),
+    getFontSize: () => invoke('settings:getFontSize'),
+    setFontSize: (size) => invoke('settings:setFontSize', size),
   },
   dialog: {
     pickFolder: () => invoke('dialog:pickFolder'),
@@ -138,6 +140,29 @@ const api: Api = {
         ipcRenderer.removeListener('update:state', listener)
       }
     },
+  },
+  reminder: {
+    list: () => invoke('reminder:list'),
+    add: (req) => invoke('reminder:add', req),
+    remove: (id) => invoke('reminder:remove', id),
+    onFired: (cb) => {
+      const listener = (_event: unknown, payload: Parameters<typeof cb>[0]) => cb(payload)
+      ipcRenderer.on('reminder:fired', listener)
+      return () => {
+        ipcRenderer.removeListener('reminder:fired', listener)
+      }
+    },
+    onNavigate: (cb) => {
+      const listener = (_event: unknown, payload: Parameters<typeof cb>[0]) => cb(payload)
+      ipcRenderer.on('reminder:navigate', listener)
+      return () => {
+        ipcRenderer.removeListener('reminder:navigate', listener)
+      }
+    },
+  },
+  dailynotes: {
+    list: (month) => invoke('dailynotes:list', month),
+    open: (date) => invoke('dailynotes:open', date),
   },
 }
 

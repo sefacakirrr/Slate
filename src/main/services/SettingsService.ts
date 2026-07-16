@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import type { ThemeMode } from '@shared/types'
+import type { ReminderRecord, ThemeMode } from '@shared/types'
 import type { VaultSecret } from './EncryptionService'
 
 /**
@@ -45,6 +45,10 @@ type SettingsData = {
    * so it lives here, like workspace/stickies.
    */
   noteOrder: Record<string, string[]>
+  /** Persisted reminders (Epic 16 — Calendar & Reminders). */
+  reminders: ReminderRecord[]
+  /** Editor / UI font size in pixels. */
+  fontSize: number
 }
 
 const DEFAULTS: SettingsData = {
@@ -56,6 +60,8 @@ const DEFAULTS: SettingsData = {
   stickies: [],
   autoSave: true,
   noteOrder: {},
+  reminders: [],
+  fontSize: 14,
 }
 
 /**
@@ -216,5 +222,47 @@ export class SettingsService {
     const data = await this.load()
     const stickies = (data.stickies ?? []).filter((s) => s.path !== path)
     await this.persist({ ...data, stickies })
+  }
+
+  async getFontSize(): Promise<number> {
+    const data = await this.load()
+    return data.fontSize ?? 14
+  }
+
+  async setFontSize(fontSize: number): Promise<void> {
+    const data = await this.load()
+    await this.persist({ ...data, fontSize })
+  }
+
+  async getReminders(): Promise<ReminderRecord[]> {
+    const data = await this.load()
+    return data.reminders ?? []
+  }
+
+  async setReminders(reminders: ReminderRecord[]): Promise<void> {
+    const data = await this.load()
+    await this.persist({ ...data, reminders })
+  }
+
+  async addReminder(reminder: ReminderRecord): Promise<void> {
+    const data = await this.load()
+    await this.persist({ ...data, reminders: [...(data.reminders ?? []), reminder] })
+  }
+
+  async removeReminder(id: string): Promise<void> {
+    const data = await this.load()
+    await this.persist({ ...data, reminders: (data.reminders ?? []).filter((r) => r.id !== id) })
+  }
+
+  async markReminderFired(id: string): Promise<void> {
+    const data = await this.load()
+    const reminders = (data.reminders ?? []).map((r) => (r.id === id ? { ...r, fired: true } : r))
+    await this.persist({ ...data, reminders })
+  }
+
+  async updateReminder(reminder: ReminderRecord): Promise<void> {
+    const data = await this.load()
+    const reminders = (data.reminders ?? []).map((r) => (r.id === reminder.id ? reminder : r))
+    await this.persist({ ...data, reminders })
   }
 }

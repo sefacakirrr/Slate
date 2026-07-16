@@ -75,17 +75,20 @@ export class WindowManager {
       this.mainWindow?.show()
     })
 
-    this.mainWindow.on('maximize', () =>
-      this.mainWindow?.webContents.send('window:maximized', true),
-    )
-    this.mainWindow.on('unmaximize', () =>
-      this.mainWindow?.webContents.send('window:maximized', false),
-    )
+    this.mainWindow.on('maximize', () => {
+      if (this.mainWindow && !this.mainWindow.isDestroyed())
+        this.mainWindow.webContents.send('window:maximized', true)
+    })
+    this.mainWindow.on('unmaximize', () => {
+      if (this.mainWindow && !this.mainWindow.isDestroyed())
+        this.mainWindow.webContents.send('window:maximized', false)
+    })
 
     this.mainWindow.on('close', (event) => {
       if (this.forceClosing) return
       event.preventDefault()
-      this.mainWindow?.webContents.send('window:confirmClose')
+      if (this.mainWindow && !this.mainWindow.isDestroyed())
+        this.mainWindow.webContents.send('window:confirmClose')
     })
 
     this.mainWindow.on('closed', () => {

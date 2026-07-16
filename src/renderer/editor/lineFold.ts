@@ -48,8 +48,9 @@ class ChevronMarker extends GutterMarker {
 
   toDOM() {
     const el = document.createElement('span')
-    el.className = 'cm-linefold-chevron'
-    el.textContent = this.collapsed ? '▸' : '▾'
+    el.className = `cm-linefold-chevron ${this.collapsed ? 'cm-linefold-collapsed' : 'cm-linefold-expanded'}`
+    el.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>'
     return el
   }
 }
@@ -143,7 +144,7 @@ const clickExpand = EditorView.domEventHandlers({
 
 const styles = EditorView.baseTheme({
   '.cm-linefold-gutter': {
-    width: '14px',
+    width: '20px',
     cursor: 'pointer',
   },
   '.cm-linefold-gutter .cm-gutterElement': {
@@ -153,12 +154,21 @@ const styles = EditorView.baseTheme({
     padding: '0',
   },
   '.cm-linefold-chevron': {
-    fontSize: '10px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     color: '#64748b',
-    transition: 'color 0.15s',
     '&:hover': {
       color: '#a78bfa',
     },
+  },
+  '.cm-linefold-collapsed': {
+    transform: 'rotate(0deg)',
+    animation: 'linefold-collapse 0.2s ease',
+  },
+  '.cm-linefold-expanded': {
+    transform: 'rotate(90deg)',
+    animation: 'linefold-expand 0.2s ease',
   },
   '.cm-linefold-ellipsis': {
     cursor: 'pointer',

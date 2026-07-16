@@ -74,3 +74,29 @@ export type ImportResultInfo = {
   skipped: number
   targetFolder: string
 }
+
+/** Recurrence pattern for a reminder. */
+export type ReminderRecurrence = 'none' | 'daily' | 'weekly' | 'monthly'
+
+/** A persisted reminder record (Epic 16 — Calendar & Reminders). */
+export type ReminderRecord = {
+  id: string
+  title: string
+  /** Vault-relative note path this reminder is linked to, or null. */
+  notePath: string | null
+  /** ISO-8601 datetime string for the reminder's target time. */
+  fireAt: string
+  /** How many minutes before `fireAt` to actually fire (0 = at exact time). */
+  alertBefore: number
+  /** Repeat pattern: 'none' = one-shot. */
+  recurrence: ReminderRecurrence
+  fired: boolean
+  createdAt: number
+}
+
+/** Payload pushed from main → renderer when a reminder fires. */
+export type ReminderFiredPayload = {
+  id: string
+  title: string
+  notePath: string | null
+}

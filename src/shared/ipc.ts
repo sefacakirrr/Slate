@@ -12,6 +12,9 @@ import type {
   ImportResultInfo,
   ImportScanInfo,
   NoteListItem,
+  ReminderFiredPayload,
+  ReminderRecord,
+  ReminderRecurrence,
   SearchResult,
   TagInfo,
   ThemeMode,
@@ -41,6 +44,8 @@ export type IpcCommands = {
   /** Custom sidebar ordering: folder path ('' = root) → child names in order. */
   'settings:getNoteOrder': { request: undefined; response: Record<string, string[]> }
   'settings:setNoteOrder': { request: { folder: string; names: string[] }; response: undefined }
+  'settings:getFontSize': { request: undefined; response: number }
+  'settings:setFontSize': { request: number; response: undefined }
   'dialog:pickFolder': { request: undefined; response: string | null }
   'vault:listNotes': { request: undefined; response: string[] }
   'vault:listDirs': { request: undefined; response: string[] }
@@ -127,6 +132,25 @@ export type IpcCommands = {
     request: { sourcePath: string; destination: 'imported-subfolder' | 'root' }
     response: ImportResultInfo
   }
+  /** List all reminders (Epic 16). */
+  'reminder:list': { request: undefined; response: ReminderRecord[] }
+  /** Create a new reminder. */
+  'reminder:add': {
+    request: {
+      title: string
+      notePath: string | null
+      fireAt: string
+      alertBefore: number
+      recurrence: ReminderRecurrence
+    }
+    response: ReminderRecord
+  }
+  /** Delete a reminder by id. */
+  'reminder:remove': { request: string; response: undefined }
+  /** List daily note paths for a given month (YYYY-MM). */
+  'dailynotes:list': { request: string; response: string[] }
+  /** Create or get the daily note for a date (YYYY-MM-DD). Returns the vault-relative path. */
+  'dailynotes:open': { request: string; response: string }
 }
 
 export type IpcChannel = keyof IpcCommands
@@ -154,6 +178,8 @@ export type Api = {
     setAutoSave: (autoSave: boolean) => Promise<IpcResult<undefined>>
     getNoteOrder: () => Promise<IpcResult<Record<string, string[]>>>
     setNoteOrder: (req: { folder: string; names: string[] }) => Promise<IpcResult<undefined>>
+    getFontSize: () => Promise<IpcResult<number>>
+    setFontSize: (size: number) => Promise<IpcResult<undefined>>
   }
   dialog: {
     pickFolder: () => Promise<IpcResult<string | null>>
@@ -239,5 +265,23 @@ export type Api = {
     }) => Promise<IpcResult<ImportResultInfo>>
     /** Subscribe to per-note import progress. Returns an unsubscribe function. */
     onProgress: (cb: (p: ImportProgressInfo) => void) => () => void
+  }
+  /** Calendar & Reminders (Epic 16). */
+  reminder: {
+    list: () => Promise<IpcResult<ReminderRecord[]>>
+    add: (req: {
+      title: string
+      notePath: string | null
+      fireAt: string
+      alertBefore: number
+      recurrence: ReminderRecurrence
+    }) => Promise<IpcResult<ReminderRecord>>
+    remove: (id: string) => Promise<IpcResult<undefined>>
+    onFired: (cb: (payload: ReminderFiredPayload) => void) => () => void
+    onNavigate: (cb: (payload: ReminderFiredPayload) => void) => () => void
+  }
+  dailynotes: {
+    list: (month: string) => Promise<IpcResult<string[]>>
+    open: (date: string) => Promise<IpcResult<string>>
   }
 }

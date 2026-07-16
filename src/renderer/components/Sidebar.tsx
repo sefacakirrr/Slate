@@ -1,14 +1,16 @@
 import { api } from '@renderer/api'
+import { CalendarPanel } from '@renderer/components/CalendarPanel'
 import { ConfirmDialog } from '@renderer/components/ConfirmDialog'
 import { NotesList } from '@renderer/components/NotesList'
 import { SettingsPanel } from '@renderer/components/SettingsPanel'
+import { useCalendarStore } from '@renderer/stores/calendarStore'
 import { isLockedPath, useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { useSearchStore } from '@renderer/stores/searchStore'
 import { useTagsStore } from '@renderer/stores/tagsStore'
 import { useVaultStore } from '@renderer/stores/vaultStore'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import {
-  ChevronDown,
+  Calendar,
   ChevronRight,
   File,
   FilePlus,
@@ -296,11 +298,10 @@ function TreeRow({
             onClick={() => setExpanded((v) => !v)}
             className="flex min-w-0 flex-1 items-center gap-1 py-0.5 text-left text-xs font-medium text-slate-500 transition hover:text-slate-300 light:text-slate-400 light:hover:text-slate-700"
           >
-            {expanded ? (
-              <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
-            ) : (
-              <ChevronRight className="size-3 shrink-0" aria-hidden="true" />
-            )}
+            <ChevronRight
+              className={`size-3 shrink-0 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
+              aria-hidden="true"
+            />
             {expanded ? (
               <FolderOpen
                 className="size-3.5 shrink-0 text-slate-400 light:text-slate-500"
@@ -629,6 +630,8 @@ export function Sidebar() {
   const noteOrder = useVaultStore((s) => s.noteOrder)
   const loadNoteOrder = useVaultStore((s) => s.loadNoteOrder)
   const setLevelOrder = useVaultStore((s) => s.setLevelOrder)
+  const calendarOpen = useCalendarStore((s) => s.calendarOpen)
+  const toggleCalendar = useCalendarStore((s) => s.toggleCalendar)
   const tree = useMemo(
     () => buildTree(fileList, folderList, noteOrder),
     [fileList, folderList, noteOrder],
@@ -840,6 +843,15 @@ export function Sidebar() {
           </button>
           <button
             type="button"
+            onClick={toggleCalendar}
+            title="Calendar"
+            className={`rounded-md p-1 transition ${calendarOpen ? 'bg-accent-600/20 text-accent-400' : 'text-slate-400 hover:bg-slate-800 hover:text-accent-300 light:text-slate-500 light:hover:bg-slate-100'}`}
+          >
+            <Calendar className="size-3.5" aria-hidden="true" />
+            <span className="sr-only">Calendar</span>
+          </button>
+          <button
+            type="button"
             onClick={loadFiles}
             disabled={treeLoading}
             title="Refresh"
@@ -967,6 +979,14 @@ export function Sidebar() {
           </>
         )}
       </div>
+
+      {calendarOpen && (
+        <div className="shrink-0 border-t border-slate-800 light:border-slate-200">
+          <div className="px-1 pt-2 pb-1">
+            <CalendarPanel />
+          </div>
+        </div>
+      )}
 
       <TagsSection />
 

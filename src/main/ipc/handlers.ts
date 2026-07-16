@@ -8,11 +8,13 @@ import {
   type IpcMainInvokeEvent,
   shell,
 } from 'electron'
+import type { ReminderRecord } from '@shared/types'
 import type { AttachmentService } from '../services/AttachmentService'
 import type { EncryptionService } from '../services/EncryptionService'
 import { ImportService } from '../services/ImportService'
 import type { IndexService } from '../services/IndexService'
 import { reconcileIndex } from '../services/reconcile'
+import type { ReminderService } from '../services/ReminderService'
 import type { SearchService } from '../services/SearchService'
 import type { SettingsService } from '../services/SettingsService'
 import type { UpdateService } from '../services/UpdateService'
@@ -37,6 +39,7 @@ type Deps = {
   attachment: AttachmentService
   encryption: EncryptionService
   update: UpdateService
+  reminder: ReminderService
   windowManager: WindowManager
   /** The window the native dialogs should attach to, if any. */
   getMainWindow: () => BrowserWindow | null
@@ -95,6 +98,11 @@ function buildHandlers(deps: Deps): HandlerMap {
     'settings:getNoteOrder': () => deps.settings.getNoteOrder(),
     'settings:setNoteOrder': async (req) => {
       await deps.settings.setNoteOrder(req.folder, req.names)
+      return undefined
+    },
+    'settings:getFontSize': () => deps.settings.getFontSize(),
+    'settings:setFontSize': async (size) => {
+      await deps.settings.setFontSize(size)
       return undefined
     },
     'dialog:pickFolder': async () => {
@@ -374,7 +382,8 @@ function buildHandlers(deps: Deps): HandlerMap {
       const v = await vault()
       const importer = new ImportService(v)
       const result = await importer.execute(req, (p) => {
-        deps.getMainWindow()?.webContents.send('import:progress', p)
+        const w = deps.getMainWindow()
+        if (w && !w.isDestroyed()) w.webContents.send('import:progress', p)
       })
       // Imported files appeared on disk behind the index's back — reconcile so
       // they are searchable immediately (epic success criterion), then refresh
@@ -386,6 +395,51 @@ function buildHandlers(deps: Deps): HandlerMap {
       }
       deps.windowManager.broadcastFilesChanged()
       return result
+    },
+    'reminder:list': () => deps.reminder.list(),
+    'reminder:add': async (req) => {
+      const reminder: ReminderRecord = {
+        id: `rem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        title: req.title,
+        notePath: req.notePath,
+        fireAt: req.fireAt,
+        alertBefore: req.alertBefore,
+        recurrence: req.recurrence,
+        fired: false,
+        createdAt: Date.now(),
+      }
+      await deps.reminder.add(reminder)
+      return reminder
+    },
+    'reminder:remove': async (id) => {
+      await deps.reminder.remove(id)
+      return undefined
+    },
+    'dailynotes:list': async (month) => {
+      const v = await vault()
+      const notes = await v.listNotes()
+      return notes.filter((p) => {
+        if (!p.startsWith('daily/')) return false
+        const name = p.slice('daily/'.length).replace(/\.\w+$/, '')
+        return name.startsWith(month)
+      })
+    },
+    'dailynotes:open': async (date) => {
+      const v = await vault()
+      const path = `daily/${date}.md`
+      try {
+        await v.createFolder('daily')
+      } catch {
+        // folder already exists
+      }
+      try {
+        await v.createNote(path)
+        tryIndex('dailynotes:open', () => deps.index.indexNote(path, '', 0))
+      } catch {
+        // note already exists
+      }
+      deps.windowManager.broadcastFilesChanged()
+      return path
     },
   }
 }
@@ -427,6 +481,8 @@ export function registerIpcHandlers(ipc: IpcMain, deps: Deps): void {
   register(ipc, 'settings:setAutoSave', handlers['settings:setAutoSave'])
   register(ipc, 'settings:getNoteOrder', handlers['settings:getNoteOrder'])
   register(ipc, 'settings:setNoteOrder', handlers['settings:setNoteOrder'])
+  register(ipc, 'settings:getFontSize', handlers['settings:getFontSize'])
+  register(ipc, 'settings:setFontSize', handlers['settings:setFontSize'])
   register(ipc, 'dialog:pickFolder', handlers['dialog:pickFolder'])
   register(ipc, 'vault:listNotes', handlers['vault:listNotes'])
   register(ipc, 'vault:listDirs', handlers['vault:listDirs'])
@@ -469,4 +525,9 @@ export function registerIpcHandlers(ipc: IpcMain, deps: Deps): void {
   register(ipc, 'import:pickSource', handlers['import:pickSource'])
   register(ipc, 'import:scan', handlers['import:scan'])
   register(ipc, 'import:execute', handlers['import:execute'])
+  register(ipc, 'reminder:list', handlers['reminder:list'])
+  register(ipc, 'reminder:add', handlers['reminder:add'])
+  register(ipc, 'reminder:remove', handlers['reminder:remove'])
+  register(ipc, 'dailynotes:list', handlers['dailynotes:list'])
+  register(ipc, 'dailynotes:open', handlers['dailynotes:open'])
 }

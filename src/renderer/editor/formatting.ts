@@ -254,6 +254,8 @@ export function removeAllFormatting(view: EditorView): void {
   text = text.replace(/==([^=]+)==\{\.\w+\}/g, '$1')
   text = text.replace(/\{color:\w+\}/g, '')
   text = text.replace(/\{\/color\}/g, '')
+  text = text.replace(/\{size:\d+\}/g, '')
+  text = text.replace(/\{\/size\}/g, '')
   text = text.replace(/^\{align:(left|center|right)\}/gm, '')
 
   if (text !== view.state.sliceDoc(from, to)) {
@@ -304,6 +306,61 @@ export function getLineAlignment(view: EditorView): Alignment {
   const line = view.state.doc.lineAt(from)
   const match = line.text.match(ALIGN_MARKER_RE)
   return match ? (match[1] as Alignment) : 'left'
+}
+
+const SIZE_OPEN_RE = /\{size:(\d+)\}/g
+const SIZE_CLOSE_TAG = '{/size}'
+
+export function applyFontSizeInline(view: EditorView, size: number): void {
+  const { from, to } = view.state.selection.main
+  if (from === to) return
+
+  const doc = view.state.doc.toString()
+
+  let effectiveFrom = from
+  let effectiveTo = to
+
+  const sizeOpenRe = /\{size:\d+\}/g
+  let m: RegExpExecArray | null = sizeOpenRe.exec(doc)
+  while (m !== null) {
+    const closeIdx = doc.indexOf(SIZE_CLOSE_TAG, m.index + m[0].length)
+    if (closeIdx !== -1) {
+      const blockFrom = m.index
+      const blockTo = closeIdx + SIZE_CLOSE_TAG.length
+      if (from < blockTo && to > blockFrom) {
+        effectiveFrom = Math.min(effectiveFrom, blockFrom)
+        effectiveTo = Math.max(effectiveTo, blockTo)
+      }
+    }
+    m = sizeOpenRe.exec(doc)
+  }
+
+  let selected = doc.slice(effectiveFrom, effectiveTo)
+  selected = selected.replace(/\{size:\d+\}/g, '').replace(/\{\/size\}/g, '')
+
+  const insert = `{size:${size}}${selected}{/size}`
+  view.dispatch({
+    changes: { from: effectiveFrom, to: effectiveTo, insert },
+    selection: {
+      anchor: effectiveFrom + `{size:${size}}`.length,
+      head: effectiveFrom + `{size:${size}}`.length + selected.length,
+    },
+  })
+}
+
+export function removeFontSizeInline(view: EditorView): void {
+  const { from, to } = view.state.selection.main
+  if (from === to) return
+
+  const doc = view.state.doc.toString()
+  const text = doc.slice(from, to)
+  const cleaned = text.replace(/\{size:\d+\}/g, '').replace(/\{\/size\}/g, '')
+  if (cleaned !== text) {
+    view.dispatch({
+      changes: { from, to, insert: cleaned },
+      selection: { anchor: from, head: from + cleaned.length },
+    })
+  }
 }
 
 const TASK_LINE_RE = /^(\s*)[-*+]\s\[[ xX]\]\s?/

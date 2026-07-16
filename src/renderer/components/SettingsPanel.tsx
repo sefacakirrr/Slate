@@ -34,6 +34,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const setBackgroundPosition = useThemeStore((s) => s.setBackgroundPosition)
   const backgroundScale = useThemeStore((s) => s.backgroundScale)
   const setBackgroundScale = useThemeStore((s) => s.setBackgroundScale)
+  const fontSize = useThemeStore((s) => s.fontSize)
+  const setFontSize = useThemeStore((s) => s.setFontSize)
   const hasPassword = useEncryptionStore((s) => s.hasPassword)
   const unlocked = useEncryptionStore((s) => s.unlocked)
   const beginSetPassword = useEncryptionStore((s) => s.beginSetPassword)
@@ -284,6 +286,26 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               />
               <span className="sr-only">Toggle auto-save</span>
             </button>
+          </div>
+          <div className="mt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-300 dark:text-slate-300 light:text-slate-700">
+                Yazı Boyutu
+              </span>
+              <span className="text-xs tabular-nums text-slate-400">{fontSize}px</span>
+            </div>
+            <input
+              type="range"
+              min={11}
+              max={24}
+              step={1}
+              value={fontSize}
+              onChange={(e) => setFontSize(Number(e.target.value))}
+              className="mt-1 w-full accent-accent-500"
+            />
+            <p className="mt-0.5 text-xs text-slate-500 light:text-slate-400">
+              Editör ve tüm arayüz bu boyuta göre ölçeklenir. {mod}+= / {mod}+-
+            </p>
           </div>
         </section>
 

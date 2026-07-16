@@ -61,9 +61,9 @@ const defaultLight = BUILTIN_THEMES.find((t) => t.id === 'default-light')!
 
 export const themeCompartment = new Compartment()
 
-export function getEditorTheme(resolved: 'dark' | 'light', colorTheme?: ColorTheme) {
-  if (colorTheme) return buildEditorTheme(colorTheme)
-  return resolved === 'dark' ? buildEditorTheme(defaultDark) : buildEditorTheme(defaultLight)
+export function getEditorTheme(resolved: 'dark' | 'light', colorTheme?: ColorTheme, fontSize?: number) {
+  if (colorTheme) return buildEditorTheme(colorTheme, fontSize)
+  return resolved === 'dark' ? buildEditorTheme(defaultDark, fontSize) : buildEditorTheme(defaultLight, fontSize)
 }
 
 export type TabStateOptions = {
@@ -73,13 +73,13 @@ export type TabStateOptions = {
   onSave: () => void
 }
 
-export function createTabState(opts: TabStateOptions, resolved: 'dark' | 'light'): EditorState {
+export function createTabState(opts: TabStateOptions, resolved: 'dark' | 'light', fontSize?: number): EditorState {
   return EditorState.create({
     doc: opts.doc,
     extensions: [
       editorSetup,
       EditorView.lineWrapping,
-      themeCompartment.of(getEditorTheme(resolved)),
+      themeCompartment.of(getEditorTheme(resolved, undefined, fontSize)),
       languageExtension(opts.path),
       attachmentExtension(),
       imageWidgetExtension(),

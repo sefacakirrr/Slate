@@ -7,6 +7,7 @@ import { AttachmentService } from './services/AttachmentService'
 import { EncryptionService, isEncryptedPath } from './services/EncryptionService'
 import { IndexService } from './services/IndexService'
 import { reconcileIndex } from './services/reconcile'
+import { ReminderService } from './services/ReminderService'
 import { SearchService } from './services/SearchService'
 import { SettingsService } from './services/SettingsService'
 import { UpdateService } from './services/UpdateService'
@@ -17,10 +18,13 @@ import { WindowManager } from './windows/WindowManager'
 // Ensure userData resolves to ...\Roaming\Slate (not the lowercased package
 // name) before any path is read.
 app.setName('Slate')
+// Windows notifications show this as the app name instead of "electron.app.Electron".
+app.setAppUserModelId('com.slate.app')
 
 const windowManager = new WindowManager()
 const shortcutManager = new ShortcutManager()
 let index: IndexService | null = null
+let reminder: ReminderService | null = null
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'slate-attachment', privileges: { stream: true, supportFetchAPI: true } },
@@ -65,6 +69,16 @@ app.whenReady().then(async () => {
     if (win && !win.isDestroyed()) win.webContents.send('update:state', state)
   })
 
+  // Calendar & Reminders (Epic 16): scheduler + native notifications.
+  reminder = new ReminderService({
+    settings,
+    onFire: (payload) => {
+      const win = windowManager.getMainWindow()
+      if (win && !win.isDestroyed()) win.webContents.send('reminder:fired', payload)
+    },
+    getMainWindow: () => windowManager.getMainWindow(),
+  })
+
   registerIpcHandlers(ipcMain, {
     settings,
     index: idx,
@@ -72,6 +86,7 @@ app.whenReady().then(async () => {
     attachment,
     encryption,
     update,
+    reminder,
     windowManager,
     getMainWindow: () => windowManager.getMainWindow(),
   })
@@ -89,6 +104,9 @@ app.whenReady().then(async () => {
   shortcutManager.register('quick-capture', 'CmdOrCtrl+Shift+N', () => {
     windowManager.openQuickCapture()
   })
+
+  // Initialize reminders: fires past-due ones, schedules upcoming.
+  reminder.init().catch((err) => console.error('reminder init failed:', err))
 
   // Self-heal the index against on-disk changes made while the app was closed.
   // Best-effort and non-blocking — the window shows immediately; incremental
@@ -133,6 +151,7 @@ app.on('before-quit', () => {
 
 app.on('will-quit', () => {
   shortcutManager.unregisterAll()
+  reminder?.dispose()
   index?.close()
 })
 

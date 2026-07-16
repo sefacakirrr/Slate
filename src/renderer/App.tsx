@@ -4,12 +4,15 @@ import { ContentPane } from '@renderer/components/ContentPane'
 import { EmptyState } from '@renderer/components/EmptyState'
 import { ImportWizard } from '@renderer/components/ImportWizard'
 import { QuickCapture } from '@renderer/components/QuickCapture'
+import { ReminderModal } from '@renderer/components/ReminderModal'
+import { ReminderToast } from '@renderer/components/ReminderToast'
 import { SearchPanel } from '@renderer/components/SearchPanel'
 import { Sidebar } from '@renderer/components/Sidebar'
 import { StickyNote } from '@renderer/components/StickyNote'
 import { TitleBar } from '@renderer/components/TitleBar'
 import { UpdateBar } from '@renderer/components/UpdateBar'
 import { UnlockDialog } from '@renderer/components/UnlockDialog'
+import { useCalendarStore } from '@renderer/stores/calendarStore'
 import { useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { useSearchStore } from '@renderer/stores/searchStore'
 import { useThemeStore } from '@renderer/stores/themeStore'
@@ -59,6 +62,17 @@ function MainApp() {
   }, [loadVaultPath, loadTheme, initEncryption, loadAutoSave])
 
   useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      e.preventDefault()
+      if (e.deltaY < 0) useThemeStore.getState().increaseFontSize()
+      else useThemeStore.getState().decreaseFontSize()
+    }
+    window.addEventListener('wheel', handleWheel, { passive: false })
+    return () => window.removeEventListener('wheel', handleWheel)
+  }, [])
+
+  useEffect(() => {
     return window.api.window.onConfirmClose(() => {
       const hasDirty = useWorkspaceStore.getState().tabs.some((t) => t.dirty)
       if (hasDirty) {
@@ -74,6 +88,24 @@ function MainApp() {
     (e) => {
       e.preventDefault()
       toggleSearch()
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+  )
+
+  useHotkeys(
+    'mod+=',
+    (e) => {
+      e.preventDefault()
+      useThemeStore.getState().increaseFontSize()
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+  )
+
+  useHotkeys(
+    'mod+-',
+    (e) => {
+      e.preventDefault()
+      useThemeStore.getState().decreaseFontSize()
     },
     { enableOnFormTags: true, enableOnContentEditable: true },
   )
@@ -112,6 +144,21 @@ function MainApp() {
     })
   }, [loadFiles])
 
+  useEffect(() => {
+    return window.api.reminder.onFired((payload) => {
+      useCalendarStore.getState().setLastFired(payload)
+      void useCalendarStore.getState().loadReminders()
+    })
+  }, [])
+
+  useEffect(() => {
+    return window.api.reminder.onNavigate((payload) => {
+      if (payload.notePath) {
+        void useWorkspaceStore.getState().openTab(payload.notePath)
+      }
+    })
+  }, [])
+
   return (
     <div className="relative flex h-screen flex-col font-sans">
       <BackgroundLayer />
@@ -148,6 +195,8 @@ function MainApp() {
 
       <UnlockDialog />
       <PatchNotesModal />
+      <ReminderModal />
+      <ReminderToast />
 
       {/* First-run import offer (Epic 15): shown once after the first vault pick. */}
       {offerFirstRunImport && vaultPath !== null && (

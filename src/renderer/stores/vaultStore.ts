@@ -1,4 +1,5 @@
 import { api } from '@renderer/api'
+import { useTagsStore } from '@renderer/stores/tagsStore'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { create } from 'zustand'
 
@@ -105,6 +106,8 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       fileList: [],
       offerFirstRunImport: saved.ok && isFirstRun,
     })
+    // Reload tags for the new vault (clears stale tags from the previous vault).
+    void useTagsStore.getState().loadTags()
   },
 
   loadFiles: async () => {
