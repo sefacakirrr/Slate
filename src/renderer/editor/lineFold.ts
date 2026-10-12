@@ -12,10 +12,10 @@ import {
   type DecorationSet,
   EditorView,
   GutterMarker,
+  gutter,
   ViewPlugin,
   type ViewUpdate,
   WidgetType,
-  gutter,
 } from '@codemirror/view'
 
 const SINGLE_ROW_CHARS = 100
@@ -26,6 +26,20 @@ const collapsedSet = StateField.define<Set<number>>({
   create: () => new Set(),
   update(set, tr) {
     let next = set
+    // Line numbers shift with edits above them: follow each folded line to its
+    // new number, and forget it if the line itself was deleted.
+    if (tr.docChanged && set.size > 0) {
+      next = new Set()
+      for (const n of set) {
+        if (n > tr.startState.doc.lines) continue
+        const line = tr.startState.doc.line(n)
+        let deleted = false
+        tr.changes.iterChangedRanges((fromA, toA) => {
+          if (fromA <= line.from && toA >= line.to) deleted = true
+        })
+        if (!deleted) next.add(tr.state.doc.lineAt(tr.changes.mapPos(line.from, 1)).number)
+      }
+    }
     for (const e of tr.effects) {
       if (e.is(toggleLine)) {
         next = new Set(next)

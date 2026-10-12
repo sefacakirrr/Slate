@@ -1,5 +1,5 @@
 import type { Api, IpcChannel, IpcRequest, IpcResponse, IpcResult } from '@shared/ipc'
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 /**
  * Typed wrapper over `ipcRenderer.invoke`. All renderer-bound responses are
@@ -27,6 +27,19 @@ const api: Api = {
     setNoteOrder: (req) => invoke('settings:setNoteOrder', req),
     getFontSize: () => invoke('settings:getFontSize'),
     setFontSize: (size) => invoke('settings:setFontSize', size),
+    getLaunchAtLogin: () => invoke('settings:getLaunchAtLogin'),
+    setLaunchAtLogin: (enabled) => invoke('settings:setLaunchAtLogin', enabled),
+    getCloseToTray: () => invoke('settings:getCloseToTray'),
+    setCloseToTray: (enabled) => invoke('settings:setCloseToTray', enabled),
+    getLanguage: () => invoke('settings:getLanguage'),
+    setLanguage: (language) => invoke('settings:setLanguage', language),
+    onLanguageChanged: (cb) => {
+      const listener = (_event: unknown, language: Parameters<typeof cb>[0]) => cb(language)
+      ipcRenderer.on('language:changed', listener)
+      return () => {
+        ipcRenderer.removeListener('language:changed', listener)
+      }
+    },
   },
   dialog: {
     pickFolder: () => invoke('dialog:pickFolder'),
@@ -40,6 +53,10 @@ const api: Api = {
     createNote: (path) => invoke('vault:createNote', path),
     deleteNote: (path) => invoke('vault:deleteNote', path),
     deleteFolder: (path) => invoke('vault:deleteFolder', path),
+    listTrash: () => invoke('vault:listTrash'),
+    restoreTrash: (id) => invoke('vault:restoreTrash', id),
+    deleteTrashItem: (id) => invoke('vault:deleteTrashItem', id),
+    emptyTrash: () => invoke('vault:emptyTrash'),
     createFolder: (path) => invoke('vault:createFolder', path),
     renameNote: (req) => invoke('vault:renameNote', req),
     renameFolder: (req) => invoke('vault:renameFolder', req),
@@ -76,6 +93,7 @@ const api: Api = {
     toggleMaximize: () => invoke('window:toggleMaximize'),
     close: () => invoke('window:close'),
     forceClose: () => invoke('window:forceClose'),
+    cancelQuit: () => invoke('window:cancelQuit'),
     isMaximized: () => invoke('window:isMaximized'),
     onMaximizeChange: (cb) => {
       const listener = (_event: unknown, isMaximized: boolean) => cb(isMaximized)
@@ -115,6 +133,22 @@ const api: Api = {
     sticky: {
       open: (path) => invoke('window:sticky:open', path),
       close: (path) => invoke('window:sticky:close', path),
+      onPathChanged: (cb) => {
+        const listener = (_event: unknown, path: string) => cb(path)
+        ipcRenderer.on('sticky:pathChanged', listener)
+        return () => {
+          ipcRenderer.removeListener('sticky:pathChanged', listener)
+        }
+      },
+      onFlushRequest: (cb) => {
+        const listener = (_event: unknown, id: number) => {
+          void invoke('window:sticky:flushed', { id, draft: cb() })
+        }
+        ipcRenderer.on('sticky:flushRequest', listener)
+        return () => {
+          ipcRenderer.removeListener('sticky:flushRequest', listener)
+        }
+      },
     },
   },
   import: {
@@ -148,6 +182,11 @@ const api: Api = {
     onFired: (cb) => {
       const listener = (_event: unknown, payload: Parameters<typeof cb>[0]) => cb(payload)
       ipcRenderer.on('reminder:fired', listener)
+      // Deliver reminders that fired before this subscription existed (e.g.
+      // overdue ones fired at launch while the renderer was still loading).
+      void invoke('reminder:takePending').then((res) => {
+        if (res.ok) for (const payload of res.data) cb(payload)
+      })
       return () => {
         ipcRenderer.removeListener('reminder:fired', listener)
       }
@@ -163,6 +202,38 @@ const api: Api = {
   dailynotes: {
     list: (month) => invoke('dailynotes:list', month),
     open: (date) => invoke('dailynotes:open', date),
+  },
+  external: {
+    read: (path) => invoke('external:read', path),
+    write: (req) => invoke('external:write', req),
+    openDropped: (files) => {
+      // Paths come from the real dropped File objects (Electron 33 has no
+      // File.path); a File built in page script has no path and is ignored.
+      const paths = files
+        .map((file) => {
+          try {
+            return webUtils.getPathForFile(file)
+          } catch {
+            return ''
+          }
+        })
+        .filter((p) => p !== '')
+      return invoke('external:resolveDropped', paths)
+    },
+    onOpenRequested: (cb) => {
+      const drain = () => {
+        void invoke('external:takePending').then((res) => {
+          if (res.ok && res.data.length > 0) cb(res.data)
+        })
+      }
+      const listener = () => drain()
+      ipcRenderer.on('external:openRequested', listener)
+      // Requests queued before this subscription (cold start / Open with).
+      drain()
+      return () => {
+        ipcRenderer.removeListener('external:openRequested', listener)
+      }
+    },
   },
 }
 

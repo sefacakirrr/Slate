@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useT } from '@renderer/i18n'
+import { useEffect, useRef } from 'react'
 
 type ConfirmDialogProps = {
   open: boolean
@@ -15,35 +16,56 @@ type ConfirmDialogProps = {
    * simple confirm/cancel modal.
    */
   onDiscard?: () => void
+  /**
+   * Which button takes focus (and so answers Enter) on open. Use `cancel` when
+   * confirming loses data (e.g. quitting with unsaved changes).
+   */
+  initialFocus?: 'confirm' | 'cancel'
   discardLabel?: string
 }
 
 /**
- * Minimal modal. Escape cancels, Enter confirms. No focus trap for v1
- * (acceptable rough edge) — the backdrop click also cancels. Supports an
- * optional third "discard" action for save/discard/cancel flows.
+ * Minimal modal. The confirm button takes focus on open, so Enter confirms;
+ * Tab moves to the other buttons and Enter then activates *that* button (Enter
+ * is not a window-level shortcut — it would fire Confirm whatever is focused,
+ * and keystrokes would still reach the editor behind the modal). Escape
+ * cancels; the backdrop click also cancels. Focus returns to where it was on
+ * close. No focus trap for v1. Supports an optional third "discard" action.
  */
 export function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = 'Delete',
+  confirmLabel,
   confirmTone = 'danger',
   onConfirm,
   onCancel,
   onDiscard,
-  discardLabel = 'Discard',
+  discardLabel,
+  initialFocus = 'confirm',
 }: ConfirmDialogProps) {
+  const t = useT()
+  const confirmRef = useRef<HTMLButtonElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    ;(initialFocus === 'cancel' ? cancelRef : confirmRef).current?.focus()
+    return () => {
+      if (previous?.isConnected) previous.focus()
+    }
+  }, [open, initialFocus])
+
   useEffect(() => {
     if (!open) return
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel()
-      if (e.key === 'Enter') onConfirm()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onConfirm, onCancel])
+  }, [open, onCancel])
 
   if (!open) return null
 
@@ -58,7 +80,7 @@ export function ConfirmDialog({
           come for free; Escape is also wired at the window level above. */}
       <button
         type="button"
-        aria-label="Cancel"
+        aria-label={t('app.confirmDialog.cancel')}
         onClick={onCancel}
         className="absolute inset-0 size-full cursor-default bg-slate-950/70 backdrop-blur-sm"
       />
@@ -72,11 +94,12 @@ export function ConfirmDialog({
         <p className="mt-2 text-sm text-slate-400">{message}</p>
         <div className="mt-5 flex justify-end gap-2">
           <button
+            ref={cancelRef}
             type="button"
             onClick={onCancel}
             className="rounded px-3 py-1.5 text-sm text-slate-300 transition hover:bg-slate-700"
           >
-            Cancel
+            {t('app.confirmDialog.cancel')}
           </button>
           {onDiscard && (
             <button
@@ -84,15 +107,16 @@ export function ConfirmDialog({
               onClick={onDiscard}
               className="rounded px-3 py-1.5 text-sm text-slate-300 transition hover:bg-slate-700"
             >
-              {discardLabel}
+              {discardLabel ?? t('app.confirmDialog.discard')}
             </button>
           )}
           <button
+            ref={confirmRef}
             type="button"
             onClick={onConfirm}
             className={`rounded px-3 py-1.5 text-sm transition ${confirmClass}`}
           >
-            {confirmLabel}
+            {confirmLabel ?? t('app.confirmDialog.confirm')}
           </button>
         </div>
       </div>

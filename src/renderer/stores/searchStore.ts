@@ -73,6 +73,14 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       snippet: '',
       rank: 0,
     }))
-    set({ open: true, query: `#${tag}`, results, loading: false, activeTag: tag })
+    // Bump seq so an in-flight full-text query can't land over the tag results.
+    set({
+      open: true,
+      query: `#${tag}`,
+      results,
+      loading: false,
+      activeTag: tag,
+      seq: get().seq + 1,
+    })
   },
 }))

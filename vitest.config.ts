@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 
 /**
  * Vitest runs in the default Node environment. Renderer-store tests stub
@@ -13,4 +13,6 @@ export default defineConfig({
       '@renderer': resolve(__dirname, 'src/renderer'),
     },
   },
+  // e2e/ holds Playwright specs (run via `npm run test:e2e`), not Vitest tests.
+  test: { exclude: [...configDefaults.exclude, 'e2e/**'] },
 })

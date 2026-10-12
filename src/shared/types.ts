@@ -21,6 +21,9 @@ export type TagInfo = {
 
 export type ThemeMode = 'dark' | 'light' | 'system'
 
+/** UI language. English is the source dictionary; Turkish mirrors it. */
+export type Language = 'en' | 'tr'
+
 export type NoteListItem = {
   path: string
   title: string
@@ -90,6 +93,12 @@ export type ReminderRecord = {
   alertBefore: number
   /** Repeat pattern: 'none' = one-shot. */
   recurrence: ReminderRecurrence
+  /**
+   * Monthly only: the day-of-month (1–31, local) the reminder recurs on, kept
+   * once fireAt has been clamped to a shorter month (Jan 31 → Feb 28 → Mar 31).
+   * Absent → the day of `fireAt`.
+   */
+  anchorDay?: number
   fired: boolean
   createdAt: number
 }
@@ -100,3 +109,35 @@ export type ReminderFiredPayload = {
   title: string
   notePath: string | null
 }
+
+/** A note or folder sitting in the in-vault trash (`<vault>/.trash/<id>/`). */
+export type TrashItem = {
+  id: string
+  kind: 'note' | 'folder'
+  /** Display name: the last segment of `originalPath`. */
+  name: string
+  /** Vault-relative path (forward slashes) the item was deleted from. */
+  originalPath: string
+  /** ISO-8601 timestamp of the delete. */
+  deletedAt: string
+  /**
+   * True when the original also went to the OS recycle bin (Windows Recycle
+   * Bin / macOS Trash); the `.trash` entry is then a copy. Absent when the OS
+   * trash failed and the original was moved into `.trash` instead.
+   */
+  osTrashed?: boolean
+}
+
+/**
+ * A file the user asked to open from outside the app (dropped from the file
+ * manager, "Open with", double-click, macOS open-file), resolved by main:
+ * - `vault`: the file lives inside the current vault → opened as a normal
+ *   note tab by its vault-relative path (forward slashes).
+ * - `external`: anywhere else → opened as an external tab keyed by its
+ *   absolute path; main has added it to the read/write allowlist.
+ * - `error`: rejected (missing, too large, binary, not UTF-8, wrong type).
+ */
+export type OpenFileRequest =
+  | { kind: 'vault'; path: string }
+  | { kind: 'external'; path: string }
+  | { kind: 'error'; path: string; error: string }

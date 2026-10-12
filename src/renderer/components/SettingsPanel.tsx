@@ -1,23 +1,33 @@
 import { api } from '@renderer/api'
 import { BackgroundPositionModal } from '@renderer/components/BackgroundPositionModal'
+import { ConfirmDialog } from '@renderer/components/ConfirmDialog'
 import { ImportWizard } from '@renderer/components/ImportWizard'
+import { type TKey, useLanguage, useT } from '@renderer/i18n'
+import { setLanguage } from '@renderer/i18n/init'
 import { useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { useThemeStore } from '@renderer/stores/themeStore'
-import { Upload } from 'lucide-react'
 import { useVaultStore } from '@renderer/stores/vaultStore'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
-import type { ThemeMode, UpdateState } from '@shared/types'
+import type { Language, ThemeMode, UpdateState } from '@shared/types'
+import { Upload, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 const mod = api.platform === 'darwin' ? '⌘' : 'Ctrl'
 
-const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [
-  { value: 'dark', label: 'Dark' },
-  { value: 'light', label: 'Light' },
-  { value: 'system', label: 'System' },
+const THEME_OPTIONS: { value: ThemeMode; label: TKey }[] = [
+  { value: 'dark', label: 'settings.theme.dark' },
+  { value: 'light', label: 'settings.theme.light' },
+  { value: 'system', label: 'settings.theme.system' },
+]
+
+const LANGUAGE_OPTIONS: { value: Language; label: TKey }[] = [
+  { value: 'en', label: 'common.language.en' },
+  { value: 'tr', label: 'common.language.tr' },
 ]
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
+  const t = useT()
+  const language = useLanguage()
   const vaultPath = useVaultStore((s) => s.vaultPath)
   const pickAndSetVault = useVaultStore((s) => s.pickAndSetVault)
   const theme = useThemeStore((s) => s.theme)
@@ -26,6 +36,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const setColorTheme = useThemeStore((s) => s.setColorTheme)
   const allThemes = useThemeStore((s) => s.allThemes)
   const importTheme = useThemeStore((s) => s.importTheme)
+  const customThemes = useThemeStore((s) => s.customThemes)
+  const removeCustomTheme = useThemeStore((s) => s.removeCustomTheme)
+  const [themeToRemove, setThemeToRemove] = useState<{ id: string; name: string } | null>(null)
   const backgroundImage = useThemeStore((s) => s.backgroundImage)
   const backgroundOpacity = useThemeStore((s) => s.backgroundOpacity)
   const setBackgroundImage = useThemeStore((s) => s.setBackgroundImage)
@@ -48,9 +61,30 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [update, setUpdate] = useState<UpdateState | { status: 'idle' }>({ status: 'idle' })
   const [showImport, setShowImport] = useState(false)
   const [pendingBgImage, setPendingBgImage] = useState<string | null>(null)
+  const [bgNotStored, setBgNotStored] = useState(false)
 
   // Subscribe to update-state pushes from main (Epic 12).
   useEffect(() => api.update.onState(setUpdate), [])
+
+  // Background behavior: launch at login + close to tray (keeps reminders alive).
+  const [launchAtLogin, setLaunchAtLogin] = useState(true)
+  const [closeToTray, setCloseToTray] = useState(true)
+  useEffect(() => {
+    void api.settings.getLaunchAtLogin().then((r) => r.ok && setLaunchAtLogin(r.data))
+    void api.settings.getCloseToTray().then((r) => r.ok && setCloseToTray(r.data))
+  }, [])
+  const toggleLaunchAtLogin = async () => {
+    const next = !launchAtLogin
+    setLaunchAtLogin(next)
+    const r = await api.settings.setLaunchAtLogin(next)
+    if (!r.ok) setLaunchAtLogin(!next)
+  }
+  const toggleCloseToTray = async () => {
+    const next = !closeToTray
+    setCloseToTray(next)
+    const r = await api.settings.setCloseToTray(next)
+    if (!r.ok) setCloseToTray(!next)
+  }
 
   const busyUpdate = update.status === 'checking' || update.status === 'downloading'
 
@@ -58,11 +92,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     <div className="flex h-full flex-col bg-slate-950 dark:bg-slate-950 light:bg-white">
       <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3 dark:border-slate-800 light:border-slate-200">
         <h2 className="text-sm font-semibold text-slate-200 dark:text-slate-200 light:text-slate-800">
-          Settings
+          {t('settings.title')}
         </h2>
         <button
           type="button"
           onClick={onClose}
+          title={t('common.close')}
           className="rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-300 dark:hover:bg-slate-800 light:hover:bg-slate-100 light:text-slate-500 light:hover:text-slate-700"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -80,7 +115,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         {/* Theme */}
         <section>
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
-            Theme
+            {t('settings.theme.heading')}
           </h3>
           <div className="flex gap-1 rounded-lg bg-slate-900 p-1 dark:bg-slate-900 light:bg-slate-100">
             {THEME_OPTIONS.map((opt) => (
@@ -94,7 +129,31 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                     : 'text-slate-400 hover:text-slate-200 dark:text-slate-400 dark:hover:text-slate-200 light:text-slate-600 light:hover:text-slate-800'
                 }`}
               >
-                {opt.label}
+                {t(opt.label)}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* Language: same segmented control as Theme. */}
+        <section>
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
+            {t('common.language.label')}
+          </h3>
+          <div className="flex gap-1 rounded-lg bg-slate-900 p-1 dark:bg-slate-900 light:bg-slate-100">
+            {LANGUAGE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                aria-pressed={language === opt.value}
+                onClick={() => void setLanguage(opt.value)}
+                className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  language === opt.value
+                    ? 'bg-accent-600 text-white'
+                    : 'text-slate-400 hover:text-slate-200 dark:text-slate-400 dark:hover:text-slate-200 light:text-slate-600 light:hover:text-slate-800'
+                }`}
+              >
+                {t(opt.label)}
               </button>
             ))}
           </div>
@@ -103,26 +162,39 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         {/* Color Theme */}
         <section>
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
-            Editor Color Theme
+            {t('settings.colorTheme.heading')}
           </h3>
           <div className="grid grid-cols-3 gap-1.5">
             {allThemes().map((ct) => (
-              <button
-                key={ct.id}
-                type="button"
-                onClick={() => setColorTheme(ct.id)}
-                className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors border ${
-                  colorThemeId === ct.id
-                    ? 'border-accent-500 bg-accent-600/20 text-accent-300'
-                    : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200 dark:border-slate-700 light:border-slate-200 light:text-slate-600 light:hover:text-slate-800'
-                }`}
-              >
-                <span
-                  className="mr-1.5 inline-block size-2 rounded-full"
-                  style={{ backgroundColor: ct.colors.cursor }}
-                />
-                {ct.name}
-              </button>
+              <div key={ct.id} className="group relative">
+                <button
+                  type="button"
+                  onClick={() => setColorTheme(ct.id)}
+                  className={`w-full rounded-md px-2 py-1.5 text-xs font-medium transition-colors border ${
+                    colorThemeId === ct.id
+                      ? 'border-accent-500 bg-accent-600/20 text-accent-300'
+                      : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200 dark:border-slate-700 light:border-slate-200 light:text-slate-600 light:hover:text-slate-800'
+                  }`}
+                >
+                  <span
+                    className="mr-1.5 inline-block size-2 rounded-full"
+                    style={{ backgroundColor: ct.colors.cursor }}
+                  />
+                  {ct.name}
+                </button>
+                {/* Imported themes only: built-ins can't be removed. */}
+                {customThemes.some((c) => c.id === ct.id) && (
+                  <button
+                    type="button"
+                    onClick={() => setThemeToRemove({ id: ct.id, name: ct.name })}
+                    aria-label={t('settings.colorTheme.removeAria', { name: ct.name })}
+                    title={t('settings.colorTheme.removeTitle')}
+                    className="absolute -right-1 -top-1 hidden size-4 items-center justify-center rounded-full bg-slate-700 text-slate-200 shadow hover:bg-red-600 hover:text-white focus-visible:flex group-hover:flex light:bg-slate-300 light:text-slate-700"
+                  >
+                    <X className="size-2.5" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
           <button
@@ -139,9 +211,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   try {
                     const json = JSON.parse(reader.result as string)
                     const result = importTheme(json)
-                    if (!result) alert('Invalid theme file. Check the JSON format.')
+                    if (!result) alert(t('settings.colorTheme.invalidFile'))
                   } catch {
-                    alert('Could not parse the file as JSON.')
+                    alert(t('settings.colorTheme.parseError'))
                   }
                 }
                 reader.readAsText(file)
@@ -151,14 +223,14 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             className="mt-2 flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
           >
             <Upload className="size-3" />
-            Import Theme (.json)
+            {t('settings.colorTheme.import')}
           </button>
         </section>
 
         {/* Background Image */}
         <section>
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
-            Background Image
+            {t('settings.backgroundImage.heading')}
           </h3>
           <div className="flex items-center gap-2">
             <button
@@ -178,22 +250,36 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               }}
               className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
             >
-              {backgroundImage ? 'Change Image' : 'Select Image'}
+              {backgroundImage
+                ? t('settings.backgroundImage.change')
+                : t('settings.backgroundImage.select')}
             </button>
             {backgroundImage && (
               <button
                 type="button"
-                onClick={() => setBackgroundImage(null)}
+                onClick={() => {
+                  setBackgroundImage(null)
+                  setBgNotStored(false)
+                }}
                 className="rounded-md bg-red-900/40 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-900/60"
               >
-                Remove
+                {t('settings.backgroundImage.remove')}
               </button>
             )}
           </div>
+          {bgNotStored && backgroundImage && (
+            <p role="alert" className="mt-2 text-xs text-red-400 light:text-red-600">
+              {t('settings.backgroundImage.tooLarge')}
+            </p>
+          )}
           {backgroundImage && (
             <div className="mt-3 space-y-3">
               <label className="block text-xs text-slate-400">
-                <span>Opacity: {Math.round(backgroundOpacity * 100)}%</span>
+                <span>
+                  {t('settings.backgroundImage.opacity', {
+                    percent: Math.round(backgroundOpacity * 100),
+                  })}
+                </span>
                 <input
                   type="range"
                   min="0.05"
@@ -209,7 +295,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 onClick={() => setPendingBgImage(backgroundImage)}
                 className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
               >
-                Reposition
+                {t('settings.backgroundImage.reposition')}
               </button>
             </div>
           )}
@@ -218,18 +304,18 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         {/* Vault */}
         <section>
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
-            Vault
+            {t('settings.vault.heading')}
           </h3>
           <div className="flex items-center gap-2">
             <span className="min-w-0 flex-1 truncate rounded bg-slate-900 px-3 py-2 text-xs text-slate-300 dark:bg-slate-900 dark:text-slate-300 light:bg-slate-100 light:text-slate-700">
-              {vaultPath ?? 'No vault selected'}
+              {vaultPath ?? t('settings.vault.none')}
             </span>
             <button
               type="button"
               onClick={pickAndSetVault}
               className="shrink-0 rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
             >
-              Change
+              {t('settings.vault.change')}
             </button>
           </div>
         </section>
@@ -237,12 +323,11 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         {/* Import (Epic 15) */}
         <section>
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
-            Import
+            {t('settings.import.heading')}
           </h3>
           <div className="space-y-2">
             <p className="text-xs text-slate-500 light:text-slate-400">
-              Bring notes from other apps: folders of .md/.txt/.html files or a Notion export zip.
-              Originals are never modified.
+              {t('settings.import.description')}
             </p>
             <button
               type="button"
@@ -250,7 +335,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               onClick={() => setShowImport(true)}
               className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
             >
-              Import notes
+              {t('settings.import.button')}
             </button>
           </div>
         </section>
@@ -258,16 +343,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         {/* Editing (Epic 13) */}
         <section>
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
-            Editing
+            {t('settings.editing.heading')}
           </h3>
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
               <span className="text-xs text-slate-300 dark:text-slate-300 light:text-slate-700">
-                Auto-save
+                {t('settings.editing.autoSave')}
               </span>
               <p className="text-xs text-slate-500 light:text-slate-400">
-                Save the active note automatically after you stop typing. {mod}+S still saves
-                immediately.
+                {t('settings.editing.autoSaveDescription', { mod })}
               </p>
             </div>
             <button
@@ -284,13 +368,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   autoSave ? 'translate-x-4' : 'translate-x-0'
                 }`}
               />
-              <span className="sr-only">Toggle auto-save</span>
+              <span className="sr-only">{t('settings.editing.toggleAutoSave')}</span>
             </button>
           </div>
           <div className="mt-3">
             <div className="flex items-center justify-between">
               <span className="text-xs text-slate-300 dark:text-slate-300 light:text-slate-700">
-                Yazı Boyutu
+                {t('settings.editing.fontSize')}
               </span>
               <span className="text-xs tabular-nums text-slate-400">{fontSize}px</span>
             </div>
@@ -304,34 +388,54 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               className="mt-1 w-full accent-accent-500"
             />
             <p className="mt-0.5 text-xs text-slate-500 light:text-slate-400">
-              Editör ve tüm arayüz bu boyuta göre ölçeklenir. {mod}+= / {mod}+-
+              {t('settings.editing.fontSizeDescription', { mod })}
             </p>
+          </div>
+        </section>
+
+        {/* Background (tray + launch at login) */}
+        <section>
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
+            {t('settings.background.heading')}
+          </h3>
+          <div className="space-y-3">
+            <SettingSwitch
+              label={t('settings.background.launchAtLogin')}
+              description={t('settings.background.launchAtLoginDescription')}
+              checked={launchAtLogin}
+              onToggle={() => void toggleLaunchAtLogin()}
+            />
+            <SettingSwitch
+              label={t('settings.background.closeToTray')}
+              description={t('settings.background.closeToTrayDescription')}
+              checked={closeToTray}
+              onToggle={() => void toggleCloseToTray()}
+            />
           </div>
         </section>
 
         {/* Vault Password (Epic 10) */}
         <section>
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
-            Vault Password
+            {t('settings.password.heading')}
           </h3>
           {!hasPassword ? (
             <div className="space-y-2">
               <p className="text-xs text-slate-500 light:text-slate-400">
-                Set a password to lock individual notes. It encrypts locked notes and is never
-                stored — there is no recovery if you forget it.
+                {t('settings.password.description')}
               </p>
               <button
                 type="button"
                 onClick={beginSetPassword}
                 className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
               >
-                Set vault password
+                {t('settings.password.set')}
               </button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate text-xs text-slate-400 light:text-slate-500">
-                {unlocked ? 'Vault unlocked this session' : 'Vault locked'}
+                {unlocked ? t('settings.password.unlocked') : t('settings.password.locked')}
               </span>
               {unlocked ? (
                 <button
@@ -339,7 +443,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   onClick={lockVaultNow}
                   className="shrink-0 rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
                 >
-                  Lock vault now
+                  {t('settings.password.lockNow')}
                 </button>
               ) : (
                 <button
@@ -347,7 +451,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   onClick={beginUnlock}
                   className="shrink-0 rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
                 >
-                  Unlock vault
+                  {t('settings.password.unlock')}
                 </button>
               )}
             </div>
@@ -357,12 +461,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         {/* Shortcuts */}
         <section>
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
-            Shortcuts
+            {t('settings.shortcuts.heading')}
           </h3>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs text-slate-300 dark:text-slate-300 light:text-slate-700">
-                Quick Capture
+                {t('settings.shortcuts.quickCapture')}
               </span>
               <kbd className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400 dark:bg-slate-800 dark:text-slate-400 light:bg-slate-200 light:text-slate-600">
                 {mod}+Shift+N
@@ -370,7 +474,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-xs text-slate-300 dark:text-slate-300 light:text-slate-700">
-                Search
+                {t('settings.shortcuts.search')}
               </span>
               <kbd className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400 dark:bg-slate-800 dark:text-slate-400 light:bg-slate-200 light:text-slate-600">
                 {mod}+Shift+F
@@ -382,7 +486,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         {/* Maintenance */}
         <section>
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
-            Maintenance
+            {t('settings.maintenance.heading')}
           </h3>
           <div className="flex items-center gap-2">
             <button
@@ -397,13 +501,19 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               }}
               className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
             >
-              {rebuilding ? 'Rebuilding…' : 'Rebuild search index'}
+              {rebuilding
+                ? t('settings.maintenance.rebuilding')
+                : t('settings.maintenance.rebuild')}
             </button>
             {rebuildStatus === 'success' && (
-              <span className="text-xs text-green-400 light:text-green-600">Done</span>
+              <span className="text-xs text-green-400 light:text-green-600">
+                {t('settings.maintenance.done')}
+              </span>
             )}
             {rebuildStatus === 'error' && (
-              <span className="text-xs text-red-400 light:text-red-600">Failed</span>
+              <span className="text-xs text-red-400 light:text-red-600">
+                {t('settings.maintenance.failed')}
+              </span>
             )}
           </div>
         </section>
@@ -411,11 +521,11 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         {/* Updates (Epic 12) */}
         <section>
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-400 light:text-slate-500">
-            Updates
+            {t('settings.updates.heading')}
           </h3>
           <div className="flex flex-col gap-2">
             <span className="text-xs text-slate-500 light:text-slate-400">
-              Current version: v{__APP_VERSION__}
+              {t('settings.updates.currentVersion', { version: __APP_VERSION__ })}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -427,7 +537,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 }}
                 className="shrink-0 rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 light:bg-slate-200 light:text-slate-700 light:hover:bg-slate-300"
               >
-                {update.status === 'checking' ? 'Checking…' : 'Check for updates'}
+                {update.status === 'checking'
+                  ? t('settings.updates.checking')
+                  : t('settings.updates.check')}
               </button>
 
               {/* Windows: a downloaded update can be installed with a restart. */}
@@ -437,7 +549,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   onClick={() => void api.update.install()}
                   className="shrink-0 rounded-md bg-accent-600 px-3 py-2 text-xs font-medium text-white shadow-sm shadow-accent-500/30 hover:bg-accent-500"
                 >
-                  Restart to update
+                  {t('settings.updates.restartToUpdate')}
                 </button>
               )}
 
@@ -448,7 +560,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   onClick={() => void api.update.openReleases(update.url)}
                   className="shrink-0 rounded-md bg-accent-600 px-3 py-2 text-xs font-medium text-white shadow-sm shadow-accent-500/30 hover:bg-accent-500"
                 >
-                  Open Releases
+                  {t('settings.updates.openReleases')}
                 </button>
               )}
             </div>
@@ -456,23 +568,27 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             {/* Status line */}
             {update.status === 'up-to-date' && (
               <span className="text-xs text-green-400 light:text-green-600">
-                You're up to date.
+                {t('settings.updates.upToDate')}
               </span>
             )}
             {update.status === 'available' && (
               <span className="text-xs text-slate-400 light:text-slate-500">
-                Version {update.version} is available
-                {update.url ? '.' : ' — downloading…'}
+                {t(
+                  update.url
+                    ? 'settings.updates.available'
+                    : 'settings.updates.availableDownloading',
+                  { version: update.version ?? '' },
+                )}
               </span>
             )}
             {update.status === 'downloading' && (
               <span className="text-xs text-slate-400 light:text-slate-500">
-                Downloading… {update.percent ?? 0}%
+                {t('settings.updates.downloading', { percent: update.percent ?? 0 })}
               </span>
             )}
             {update.status === 'downloaded' && (
               <span className="text-xs text-slate-400 light:text-slate-500">
-                Version {update.version} downloaded — restart to install.
+                {t('settings.updates.downloaded', { version: update.version ?? '' })}
               </span>
             )}
             {/* What's new: release-notes summary for the offered version. */}
@@ -483,7 +599,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               update.notes && (
                 <div className="rounded-md bg-slate-900 px-3 py-2 dark:bg-slate-900 light:bg-slate-100">
                   <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500 light:text-slate-400">
-                    What's new
+                    {t('settings.updates.whatsNew')}
                   </p>
                   <p className="whitespace-pre-line text-xs leading-relaxed text-slate-400 light:text-slate-600">
                     {update.notes}
@@ -492,16 +608,16 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               )}
             {update.status === 'dev-disabled' && (
               <span className="text-xs text-slate-500 light:text-slate-400">
-                Updates are only available in the installed app.
+                {t('settings.updates.devDisabled')}
               </span>
             )}
             {update.status === 'error' && (
               <span className="text-xs text-red-400 light:text-red-600">
-                Update check failed: {update.error}
+                {t('settings.updates.error', { error: update.error ?? '' })}
               </span>
             )}
             <p className="mt-2 text-[11px] text-slate-600 light:text-slate-400">
-              Updates are installed silently — no setup wizards. App restarts automatically.
+              {t('settings.updates.silentNote')}
             </p>
           </div>
         </section>
@@ -509,13 +625,25 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
       {showImport && <ImportWizard onClose={() => setShowImport(false)} />}
 
+      <ConfirmDialog
+        open={themeToRemove !== null}
+        title={t('settings.colorTheme.removeDialogTitle')}
+        message={t('settings.colorTheme.removeDialogMessage', { name: themeToRemove?.name ?? '' })}
+        confirmLabel={t('settings.colorTheme.removeDialogConfirm')}
+        onConfirm={() => {
+          if (themeToRemove) removeCustomTheme(themeToRemove.id)
+          setThemeToRemove(null)
+        }}
+        onCancel={() => setThemeToRemove(null)}
+      />
+
       {pendingBgImage && (
         <BackgroundPositionModal
           imageDataUrl={pendingBgImage}
           initialPosition={backgroundPosition}
           initialScale={backgroundScale}
           onConfirm={(pos, scl) => {
-            setBackgroundImage(pendingBgImage)
+            setBgNotStored(!setBackgroundImage(pendingBgImage))
             setBackgroundPosition(pos)
             setBackgroundScale(scl)
             setPendingBgImage(null)
@@ -523,6 +651,46 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           onCancel={() => setPendingBgImage(null)}
         />
       )}
+    </div>
+  )
+}
+
+/** On/off row matching the Auto-save toggle style. */
+function SettingSwitch({
+  label,
+  description,
+  checked,
+  onToggle,
+}: {
+  label: string
+  description: string
+  checked: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <div className="min-w-0">
+        <span className="text-xs text-slate-300 dark:text-slate-300 light:text-slate-700">
+          {label}
+        </span>
+        <p className="text-xs text-slate-500 light:text-slate-400">{description}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={onToggle}
+        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+          checked ? 'bg-accent-600' : 'bg-slate-700 dark:bg-slate-700 light:bg-slate-300'
+        }`}
+      >
+        <span
+          className={`absolute left-0.5 top-0.5 size-4 rounded-full bg-white transition-transform ${
+            checked ? 'translate-x-4' : 'translate-x-0'
+          }`}
+        />
+      </button>
     </div>
   )
 }

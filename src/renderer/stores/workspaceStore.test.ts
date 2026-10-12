@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AUTO_SAVE_DEBOUNCE_MS, useWorkspaceStore } from './workspaceStore'
+import { AUTO_SAVE_DEBOUNCE_MS, runTabMove, useWorkspaceStore } from './workspaceStore'
 
 /**
  * The store reaches the main process only through `@renderer/api`. We replace it
@@ -19,9 +19,17 @@ const { readNote, writeNote, getWorkspace, setWorkspace, getAutoSave, setAutoSav
   }),
 )
 
+const { listNotes } = vi.hoisted(() => ({ listNotes: vi.fn() }))
+
+const { externalRead, externalWrite } = vi.hoisted(() => ({
+  externalRead: vi.fn(),
+  externalWrite: vi.fn(),
+}))
+
 vi.mock('@renderer/api', () => ({
   api: {
-    vault: { readNote, writeNote },
+    vault: { readNote, writeNote, listNotes },
+    external: { read: externalRead, write: externalWrite },
     settings: { getWorkspace, setWorkspace, getAutoSave, setAutoSave },
     tags: { list: vi.fn().mockResolvedValue({ ok: true, data: [] }) },
   },
@@ -552,5 +560,190 @@ describe('restoreWorkspace', () => {
 
     expect(store().tabs).toHaveLength(0)
     expect(readNote).not.toHaveBeenCalled()
+  })
+})
+
+describe('external (outside-vault) tabs', () => {
+  const abs = 'C:\\Users\\me\\Desktop\\todo.txt'
+
+  it('reads and saves an absolute-path tab through api.external, not the vault', async () => {
+    externalRead.mockResolvedValue(ok('one'))
+    externalWrite.mockResolvedValue(ok(undefined))
+    await store().openTab(abs)
+    expect(externalRead).toHaveBeenCalledWith(abs)
+    expect(readNote).not.toHaveBeenCalled()
+    expect(store().activeTabPath).toBe(abs)
+
+    store().setTabDraft(abs, 'one two')
+    expect(store().tabs[0].dirty).toBe(true)
+    await store().saveTab(abs)
+    expect(externalWrite).toHaveBeenCalledWith({ path: abs, content: 'one two' })
+    expect(writeNote).not.toHaveBeenCalled()
+    expect(store().tabs[0].dirty).toBe(false)
+  })
+
+  it('skips an external tab that can no longer be read', async () => {
+    externalRead.mockResolvedValue(fail('not-found'))
+    await store().openTab(abs)
+    expect(store().tabs).toHaveLength(0)
+  })
+})
+
+describe('bulk close with dirty tabs', () => {
+  async function openFour(): Promise<void> {
+    vaultWith({ 'a.md': 'A', 'b.md': 'B', 'c.md': 'C', 'd.md': 'D' })
+    for (const p of ['a.md', 'b.md', 'c.md', 'd.md']) await store().openTab(p)
+    store().setTabDraft('b.md', 'B!')
+    store().setTabDraft('c.md', 'C!')
+  }
+
+  it('closes clean tabs and queues a prompt per dirty tab', async () => {
+    await openFour()
+    store().closeOtherTabs('a.md')
+    expect(store().tabs.map((t) => t.path)).toEqual(['a.md', 'b.md', 'c.md'])
+    expect(store().activeTabPath).toBe('a.md')
+    expect(store().pendingClose).toBe('b.md')
+    store().confirmCloseDiscard()
+    expect(store().pendingClose).toBe('c.md')
+    store().cancelClose()
+    expect(store().pendingClose).toBeNull()
+    expect(store().closeQueue).toEqual([])
+    expect(store().tabs.map((t) => t.path)).toEqual(['a.md', 'c.md'])
+  })
+
+  it('Close All with Save writes each dirty tab before closing it', async () => {
+    await openFour()
+    store().closeAllTabs()
+    await store().confirmCloseSave()
+    await store().confirmCloseSave()
+    expect(writeNote).toHaveBeenCalledWith({ path: 'b.md', content: 'B!' })
+    expect(writeNote).toHaveBeenCalledWith({ path: 'c.md', content: 'C!' })
+    expect(store().tabs).toEqual([])
+    expect(store().pendingClose).toBeNull()
+  })
+})
+
+describe('folder moves and saves', () => {
+  it('re-points tabs inside a moved folder and keeps their drafts', async () => {
+    vaultWith({ 'F/a.md': 'A', 'F/sub/b.md': 'B', 'Fx.md': 'X' })
+    for (const p of ['F/a.md', 'F/sub/b.md', 'Fx.md']) await store().openTab(p)
+    store().setTabDraft('F/a.md', 'A!')
+    store().renameFolderTabs('F', 'G/F')
+    expect(store().tabs.map((t) => t.path)).toEqual(['G/F/a.md', 'G/F/sub/b.md', 'Fx.md'])
+    expect(store().tabs[0]).toMatchObject({ draft: 'A!', dirty: true })
+  })
+
+  it('saveTabsUnder saves only tabs at or under the path', async () => {
+    vaultWith({ 'F/a.md': 'A', 'Fx.md': 'X' })
+    await store().openTab('F/a.md')
+    await store().openTab('Fx.md')
+    store().setTabDraft('F/a.md', 'A!')
+    store().setTabDraft('Fx.md', 'X!')
+    expect(await store().saveTabsUnder('F')).toBe(true)
+    expect(writeNote).toHaveBeenCalledTimes(1)
+    writeNote.mockResolvedValue(fail('disk full'))
+    expect(await store().saveTabsUnder('Fx.md')).toBe(false)
+  })
+})
+
+describe('locked-note placeholders', () => {
+  it('restores a locked tab as a placeholder with no content, skipping missing ones', async () => {
+    readNote.mockImplementation((path: string) =>
+      Promise.resolve(path === 'a.md' ? ok('A') : fail('note-locked')),
+    )
+    listNotes.mockResolvedValue(ok(['a.md', 's.md.enc']))
+    getWorkspace.mockResolvedValueOnce(
+      ok({ openTabs: ['a.md', 's.md.enc', 'gone.md.enc'], activeTab: 's.md.enc' }),
+    )
+
+    await store().restoreWorkspace()
+
+    expect(store().tabs.map((t) => t.path)).toEqual(['a.md', 's.md.enc'])
+    expect(store().tabs[1]).toEqual({
+      path: 's.md.enc',
+      baseline: '',
+      draft: '',
+      dirty: false,
+      locked: true,
+    })
+    expect(store().activeTabPath).toBe('s.md.enc')
+  })
+
+  it('openTab on a placeholder loads the note once it can be read', async () => {
+    useWorkspaceStore.setState({
+      tabs: [{ path: 's.md.enc', baseline: '', draft: '', dirty: false, locked: true }],
+      activeTabPath: null,
+    })
+    vaultWith({ 's.md.enc': 'secret' })
+    await store().openTab('s.md.enc')
+    expect(store().tabs).toEqual([
+      { path: 's.md.enc', baseline: 'secret', draft: 'secret', dirty: false },
+    ])
+    expect(store().activeTabPath).toBe('s.md.enc')
+  })
+
+  it('lockTabs drops the text and ignores edits/saves while locked', async () => {
+    vaultWith({ 's.md.enc': 'secret', 'p.md': 'P' })
+    await store().openTab('p.md')
+    await store().openTab('s.md.enc')
+    store().lockTabs(['s.md.enc'])
+    expect(store().tabs[1]).toMatchObject({ draft: '', baseline: '', locked: true })
+    expect(store().tabs[0]).toMatchObject({ draft: 'P' })
+    store().setTabDraft('s.md.enc', 'typed')
+    await store().saveTab('s.md.enc')
+    expect(store().tabs[1].draft).toBe('')
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+})
+
+describe('saves during a file move', () => {
+  it('waits for the move and writes to the renamed path', async () => {
+    vaultWith({ 'a.md': 'A' })
+    await store().openTab('a.md')
+    store().setTabDraft('a.md', 'A!')
+
+    let finishMove = () => {}
+    const moved = new Promise<void>((r) => {
+      finishMove = r
+    })
+    const move = runTabMove(async () => {
+      await moved
+      store().renameTab('a.md', 'a.txt')
+    })
+    // Ctrl+S while the rename IPC is still in flight.
+    const save = store().saveTab('a.md')
+    await Promise.resolve()
+    expect(writeNote).not.toHaveBeenCalled()
+    finishMove()
+    await move
+    await save
+    expect(writeNote).toHaveBeenCalledWith({ path: 'a.txt', content: 'A!' })
+    expect(store().tabs[0]).toMatchObject({ path: 'a.txt', dirty: false })
+  })
+
+  it('a move waits for a save already in flight', async () => {
+    vaultWith({ 'a.md': 'A' })
+    await store().openTab('a.md')
+    store().setTabDraft('a.md', 'A!')
+    let finishWrite = (_: unknown) => {}
+    writeNote.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          finishWrite = r
+        }),
+    )
+    const order: string[] = []
+    const save = store()
+      .saveTab('a.md')
+      .then(() => order.push('saved'))
+    await vi.waitFor(() => expect(writeNote).toHaveBeenCalled())
+    const move = runTabMove(async () => {
+      order.push('moved')
+    })
+    await Promise.resolve()
+    expect(order).toEqual([])
+    finishWrite(ok(undefined))
+    await Promise.all([save, move])
+    expect(order.sort()).toEqual(['moved', 'saved'])
   })
 })

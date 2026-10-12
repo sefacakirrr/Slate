@@ -1,5 +1,6 @@
 import { api } from '@renderer/api'
 import { useTagsStore } from '@renderer/stores/tagsStore'
+import { useTrashStore } from '@renderer/stores/trashStore'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { create } from 'zustand'
 
@@ -39,13 +40,13 @@ type VaultState = {
   loadFiles: () => Promise<void>
   /**
    * Creates a new empty note (optimistic). Returns its relative path on
-   * success, or null on failure (list reverted).
+   * success, or null on failure (list reverted; `onError` gets the error code).
    */
-  createNote: (name?: string) => Promise<string | null>
-  /** Deletes a note (optimistic, reverts on failure). */
-  deleteNote: (path: string) => Promise<void>
-  /** Recursively deletes a folder and all notes inside it (optimistic). */
-  deleteFolder: (folderPath: string) => Promise<void>
+  createNote: (name?: string, onError?: (code: string) => void) => Promise<string | null>
+  /** Moves a note to the trash (optimistic, reverts on failure) and offers undo. True on success. */
+  deleteNote: (path: string) => Promise<boolean>
+  /** Moves a folder and everything in it to the trash (optimistic) and offers undo. True on success. */
+  deleteFolder: (folderPath: string) => Promise<boolean>
   /**
    * Renames a note. Returns null on success, or the error message on failure
    * (e.g. `file-exists`, `invalid-extension`) so the caller can surface it.
@@ -54,8 +55,12 @@ type VaultState = {
   renameNote: (from: string, to: string) => Promise<string | null>
   /** Creates a new folder in the vault and refreshes the file list. */
   createFolder: (path: string) => Promise<string | null>
-  /** Moves/renames a folder within the vault (optimistic). Returns error string or null. */
-  moveFolder: (from: string, to: string) => Promise<string | null>
+  /**
+   * Moves/renames a folder within the vault. Returns error string or null.
+   * Optimistic by default (drag-move); `optimistic: false` updates the tree
+   * only once it succeeded, so an inline rename input survives a failure.
+   */
+  moveFolder: (from: string, to: string, opts?: { optimistic?: boolean }) => Promise<string | null>
 }
 
 /** Case-insensitive alphabetical sort, matching VaultService's listing order. */
@@ -120,7 +125,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     })
   },
 
-  createNote: async (name) => {
+  createNote: async (name, onError) => {
     const path = name ?? `untitled-${Date.now()}.md`
     const previous = get().fileList
 
@@ -131,6 +136,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     if (!result.ok) {
       console.error(`createNote failed: ${result.error}`)
       set({ fileList: previous })
+      onError?.(result.error)
       return null
     }
     return path
@@ -143,13 +149,17 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     if (!result.ok) {
       console.error(`deleteNote failed: ${result.error}`)
       set({ fileList: previous })
+      useTrashStore.getState().notifyDeleteFailed(path, result.error)
+      return false
     }
+    useTrashStore.getState().notifyTrashed(result.data)
+    return true
   },
 
   deleteFolder: async (folderPath) => {
     const prevFiles = get().fileList
     const prevFolders = get().folderList
-    const prefix = folderPath + '/'
+    const prefix = `${folderPath}/`
     set({
       fileList: prevFiles.filter((p) => !p.startsWith(prefix)),
       folderList: prevFolders.filter((p) => p !== folderPath && !p.startsWith(prefix)),
@@ -158,7 +168,11 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     if (!result.ok) {
       console.error(`deleteFolder failed: ${result.error}`)
       set({ fileList: prevFiles, folderList: prevFolders })
+      useTrashStore.getState().notifyDeleteFailed(folderPath, result.error)
+      return false
     }
+    useTrashStore.getState().notifyTrashed(result.data)
+    return true
   },
 
   renameNote: async (from, to) => {
@@ -188,31 +202,41 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     return null
   },
 
-  moveFolder: async (from, to) => {
+  moveFolder: async (from, to, opts) => {
     if (from === to) return null
-    const { fileList, folderList } = get()
-    const fromPrefix = from + '/'
-    const toPrefix = to + '/'
-    const prevFiles = fileList
-    const prevFolders = folderList
-    set({
-      fileList: sortPaths(
-        fileList.map((p) => (p.startsWith(fromPrefix) ? toPrefix + p.slice(fromPrefix.length) : p)),
-      ),
-      folderList: sortPaths([
-        ...folderList.filter((p) => p !== from && !p.startsWith(fromPrefix)),
-        to,
-        ...folderList
-          .filter((p) => p.startsWith(fromPrefix))
-          .map((p) => toPrefix + p.slice(fromPrefix.length)),
-      ]),
-    })
+    const optimistic = opts?.optimistic ?? true
+    const fromPrefix = `${from}/`
+    const toPrefix = `${to}/`
+    const applyMove = () => {
+      const { fileList, folderList } = get()
+      set({
+        fileList: sortPaths(
+          fileList.map((p) =>
+            p.startsWith(fromPrefix) ? toPrefix + p.slice(fromPrefix.length) : p,
+          ),
+        ),
+        // A Set: a files-changed reload may already list the new paths.
+        folderList: sortPaths([
+          ...new Set([
+            ...folderList.filter((p) => p !== from && !p.startsWith(fromPrefix)),
+            to,
+            ...folderList
+              .filter((p) => p.startsWith(fromPrefix))
+              .map((p) => toPrefix + p.slice(fromPrefix.length)),
+          ]),
+        ]),
+      })
+    }
+    const prevFiles = get().fileList
+    const prevFolders = get().folderList
+    if (optimistic) applyMove()
     const result = await api.vault.renameFolder({ from, to })
     if (!result.ok) {
       console.error(`moveFolder failed: ${result.error}`)
-      set({ fileList: prevFiles, folderList: prevFolders })
+      if (optimistic) set({ fileList: prevFiles, folderList: prevFolders })
       return result.error
     }
+    if (!optimistic) applyMove()
     return null
   },
 }))

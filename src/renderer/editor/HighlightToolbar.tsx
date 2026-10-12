@@ -2,9 +2,6 @@ import {
   applyFontSizeInline,
   applyTextColor,
   getLineAlignment,
-  removeAllFormatting,
-  removeFontSizeInline,
-  removeTextColor,
   setAlignment,
   TEXT_COLORS,
   type TextColor,
@@ -14,10 +11,11 @@ import {
 import type { Alignment } from '@renderer/editor/highlight'
 import {
   applyHighlight,
+  clearAllFormatting,
   HIGHLIGHT_COLORS,
   type HighlightColor,
-  removeHighlight,
 } from '@renderer/editor/highlight'
+import { useT } from '@renderer/i18n'
 import type { EditorView } from 'codemirror'
 import {
   ALargeSmall,
@@ -73,6 +71,7 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
   const [subMenu, setSubMenu] = useState<SubMenu>('none')
   const [currentAlign, setCurrentAlign] = useState<Alignment>('left')
   const toolbarRef = useRef<HTMLDivElement>(null)
+  const t = useT()
 
   useEffect(() => {
     if (!view) return
@@ -140,7 +139,7 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
       <div className="flex items-center gap-0.5">
         <button
           type="button"
-          title={`Bold (${mod}+B)`}
+          title={t('editor.toolbar.bold', { shortcut: `${mod}+B` })}
           onClick={() => {
             toggleFormat(view, 'bold')
             setVisible(false)
@@ -151,7 +150,7 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
         </button>
         <button
           type="button"
-          title={`Italic (${mod}+I)`}
+          title={t('editor.toolbar.italic', { shortcut: `${mod}+I` })}
           onClick={() => {
             toggleFormat(view, 'italic')
             setVisible(false)
@@ -162,7 +161,7 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
         </button>
         <button
           type="button"
-          title={`Underline (${mod}+U)`}
+          title={t('editor.toolbar.underline', { shortcut: `${mod}+U` })}
           onClick={() => {
             toggleFormat(view, 'underline')
             setVisible(false)
@@ -173,7 +172,7 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
         </button>
         <button
           type="button"
-          title="Strikethrough"
+          title={t('editor.toolbar.strikethrough')}
           onClick={() => {
             toggleFormat(view, 'strikethrough')
             setVisible(false)
@@ -184,7 +183,7 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
         </button>
         <button
           type="button"
-          title="Inline code"
+          title={t('editor.toolbar.inlineCode')}
           onClick={() => {
             toggleFormat(view, 'code')
             setVisible(false)
@@ -195,7 +194,7 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
         </button>
         <button
           type="button"
-          title="Toggle checklist"
+          title={t('editor.toolbar.toggleChecklist')}
           onClick={() => {
             toggleChecklist(view)
             setVisible(false)
@@ -210,7 +209,7 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
         {/* Alignment buttons */}
         <button
           type="button"
-          title={`Align left (${mod}+Shift+L)`}
+          title={t('editor.toolbar.alignLeft', { shortcut: `${mod}+Shift+L` })}
           onClick={() => {
             setAlignment(view, 'left')
             setCurrentAlign('left')
@@ -221,7 +220,7 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
         </button>
         <button
           type="button"
-          title={`Align center (${mod}+Shift+E)`}
+          title={t('editor.toolbar.alignCenter', { shortcut: `${mod}+Shift+E` })}
           onClick={() => {
             setAlignment(view, 'center')
             setCurrentAlign('center')
@@ -232,7 +231,7 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
         </button>
         <button
           type="button"
-          title={`Align right (${mod}+Shift+R)`}
+          title={t('editor.toolbar.alignRight', { shortcut: `${mod}+Shift+R` })}
           onClick={() => {
             setAlignment(view, 'right')
             setCurrentAlign('right')
@@ -246,7 +245,7 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
 
         <button
           type="button"
-          title="Text color"
+          title={t('editor.toolbar.textColor')}
           onClick={() => setSubMenu(subMenu === 'text' ? 'none' : 'text')}
           className={`${btnClass} ${subMenu === 'text' ? 'bg-slate-700 text-slate-100 light:bg-slate-200 light:text-slate-900' : ''}`}
         >
@@ -254,7 +253,7 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
         </button>
         <button
           type="button"
-          title="Background color"
+          title={t('editor.toolbar.backgroundColor')}
           onClick={() => setSubMenu(subMenu === 'bg' ? 'none' : 'bg')}
           className={`${btnClass} ${subMenu === 'bg' ? 'bg-slate-700 text-slate-100 light:bg-slate-200 light:text-slate-900' : ''}`}
         >
@@ -263,7 +262,7 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
 
         <button
           type="button"
-          title="Font size"
+          title={t('editor.toolbar.fontSize')}
           onClick={() => setSubMenu(subMenu === 'size' ? 'none' : 'size')}
           className={`${btnClass} ${subMenu === 'size' ? 'bg-slate-700 text-slate-100 light:bg-slate-200 light:text-slate-900' : ''}`}
         >
@@ -272,12 +271,9 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
 
         <button
           type="button"
-          title="Remove all formatting"
+          title={t('editor.toolbar.clearFormatting')}
           onClick={() => {
-            removeHighlight(view)
-            removeTextColor(view)
-            removeFontSizeInline(view)
-            removeAllFormatting(view)
+            clearAllFormatting(view)
             setVisible(false)
           }}
           className={btnClass}
@@ -293,7 +289,7 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
             <button
               key={color}
               type="button"
-              title={`Background: ${color}`}
+              title={t('editor.toolbar.backgroundSwatch', { color: t(`editor.colors.${color}`) })}
               onClick={() => {
                 applyHighlight(view, color)
                 setVisible(false)
@@ -302,7 +298,9 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
               className="size-5 rounded-full border border-slate-600 transition hover:scale-110 dark:border-slate-600 light:border-slate-300"
               style={{ backgroundColor: BG_SWATCHES[color] }}
             >
-              <span className="sr-only">Background {color}</span>
+              <span className="sr-only">
+                {t('editor.toolbar.backgroundSwatchLabel', { color: t(`editor.colors.${color}`) })}
+              </span>
             </button>
           ))}
         </div>
@@ -315,7 +313,7 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
             <button
               key={color}
               type="button"
-              title={`Text: ${color}`}
+              title={t('editor.toolbar.textSwatch', { color: t(`editor.colors.${color}`) })}
               onClick={() => {
                 applyTextColor(view, color)
                 setVisible(false)
@@ -324,7 +322,9 @@ export function HighlightToolbar({ view }: { view: EditorView | null }) {
               className="size-5 rounded-full border border-slate-600 transition hover:scale-110 dark:border-slate-600 light:border-slate-300"
               style={{ backgroundColor: TEXT_SWATCHES[color] }}
             >
-              <span className="sr-only">Text color {color}</span>
+              <span className="sr-only">
+                {t('editor.toolbar.textSwatchLabel', { color: t(`editor.colors.${color}`) })}
+              </span>
             </button>
           ))}
         </div>

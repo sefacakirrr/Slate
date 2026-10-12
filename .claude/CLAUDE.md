@@ -54,6 +54,10 @@ npm run rebuild
 
 - `npm run test` — Vitest, one shot
 - `npm run test:watch` — Vitest watch mode
+- `npm run test:e2e` — build + Playwright E2E against the real Electron app (`e2e/`, temp vault + temp userData per test; on Windows some specs touch the real Recycle Bin and clean up after themselves)
+- `npm run test:e2e:nobuild -- -g "<name>"` — re-run specs against the existing `out/` build
+- Parallel E2E runs need separate builds: `npx electron-vite build --outDir <ABSOLUTE path>/out-x` then `SLATE_E2E_OUT=out-x npx playwright test -c e2e/playwright.config.ts --output e2e/.results-x` (a relative `--outDir` puts the renderer inside `src/renderer/`)
+- Don't run `biome check --write --unsafe`: its fix rewrites React hook dependency arrays and has broken theme switching before
 
 > Tests run Vitest **under Electron's Node runtime** via `scripts/run-vitest-electron.mjs` (`ELECTRON_RUN_AS_NODE=1`). This is required because the rebuilt `better-sqlite3` is an Electron-ABI binary that won't load under the system Node — the index/search tests would fail at module load otherwise. Don't invoke `vitest` directly; use the npm scripts.
 

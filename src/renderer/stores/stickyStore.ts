@@ -48,6 +48,18 @@ type StickyState = {
    * already matches the current draft (e.g. this window's own save).
    */
   reloadFromDisk: () => Promise<string | null>
+  /**
+   * The note moved (main's `sticky:pathChanged`): point the store at the new
+   * path, keeping the buffer and dirty state, so saves land on the moved file.
+   */
+  relocate: (path: string) => void
+  /** Set by `freeze`: the note is being locked, so this window never saves again. */
+  frozen: boolean
+  /**
+   * Main is locking this note (`sticky:flushRequest`): stop all saving and
+   * return the unsaved draft for main to encrypt (null when clean).
+   */
+  freeze: () => string | null
 }
 
 export const useStickyStore = create<StickyState>((set, get) => ({
@@ -81,11 +93,14 @@ export const useStickyStore = create<StickyState>((set, get) => ({
 
   save: async () => {
     clearAutosave()
-    const { path, draft, dirty } = get()
-    if (path === null || !dirty) return
+    const { path, draft, dirty, frozen } = get()
+    if (frozen || path === null || !dirty) return
     const result = await api.vault.writeNote({ path, content: draft })
     if (!result.ok) {
       console.error(`sticky save failed for ${path}: ${result.error}`)
+      // The note was locked meanwhile: main refused to write plaintext. Show the
+      // locked state rather than silently dropping the save.
+      if (result.error === 'note-locked') set({ status: 'error', error: result.error })
       return
     }
     set((s) => ({ baseline: draft, dirty: s.draft !== draft }))
@@ -112,5 +127,15 @@ export const useStickyStore = create<StickyState>((set, get) => ({
     if (result.data === draft) return null
     set({ baseline: result.data, draft: result.data, dirty: false })
     return result.data
+  },
+
+  relocate: (path) => set({ path }),
+
+  frozen: false,
+  freeze: () => {
+    clearAutosave()
+    set({ frozen: true })
+    const { dirty, draft } = get()
+    return dirty ? draft : null
   },
 }))

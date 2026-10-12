@@ -1,6 +1,8 @@
-import type { EditorState } from '@codemirror/state'
+import { EditorState } from '@codemirror/state'
 import { HighlightToolbar } from '@renderer/editor/HighlightToolbar'
 import { createTabState, getEditorTheme, themeCompartment } from '@renderer/editor/setup'
+import { onDiskContent } from '@renderer/stores/diskSyncStore'
+import { isExternalTabPath } from '@renderer/stores/externalPath'
 import { useThemeStore } from '@renderer/stores/themeStore'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { EditorView } from 'codemirror'
@@ -13,7 +15,16 @@ export function EditorHost() {
   const [editorView, setEditorView] = useState<EditorView | null>(null)
 
   const activeTabPath = useWorkspaceStore((s) => s.activeTabPath)
-  const openPaths = useWorkspaceStore((s) => s.tabs.map((t) => t.path).join('\n'))
+  // Locked placeholders hold no text: their cached editor state is dropped.
+  const openPaths = useWorkspaceStore((s) =>
+    s.tabs
+      .filter((t) => !t.locked)
+      .map((t) => t.path)
+      .join('\n'),
+  )
+  const activeLocked = useWorkspaceStore(
+    (s) => s.tabs.find((t) => t.path === s.activeTabPath)?.locked === true,
+  )
   const resolved = useThemeStore((s) => s.resolved)
   const colorThemeId = useThemeStore((s) => s.colorThemeId)
   const fontSize = useThemeStore((s) => s.fontSize)
@@ -34,6 +45,13 @@ export function EditorHost() {
   useEffect(() => {
     const view = viewRef.current
     if (view === null || activeTabPath === null) return
+    if (activeLocked) {
+      // Locked placeholder (ContentPane hides the editor): show nothing, keep
+      // no decrypted state around, and don't cache this empty one.
+      statesRef.current.delete(activeTabPath)
+      view.setState(EditorState.create({ doc: '' }))
+      return
+    }
 
     let state = statesRef.current.get(activeTabPath)
     if (state === undefined) {
@@ -41,6 +59,7 @@ export function EditorHost() {
       state = createTabState(
         {
           path: activeTabPath,
+          external: isExternalTabPath(activeTabPath),
           doc: tab?.draft ?? '',
           onDocChange: (text) => useWorkspaceStore.getState().setTabDraft(activeTabPath, text),
           onSave: () => void useWorkspaceStore.getState().saveActiveTab(),
@@ -57,7 +76,7 @@ export function EditorHost() {
       const v = viewRef.current
       if (v !== null) statesRef.current.set(activeTabPath, v.state)
     }
-  }, [activeTabPath, resolved])
+  }, [activeTabPath, activeLocked, resolved])
 
   // Reconfigure theme on all cached tab states when theme, color theme, or font size changes.
   useEffect(() => {
@@ -83,28 +102,37 @@ export function EditorHost() {
   // Near-live sync (Epic 11 Phase 03): when a note is saved by another window,
   // reload its content into the open tab — the live view if it's active, else the
   // cached state. `reloadTab` returns null when the tab is dirty or unchanged.
+  // The same replacement serves disk changes made by other programs (diskSyncStore:
+  // focus reload, conflict → Reload).
   useEffect(() => {
-    return window.api.window.onNoteChanged((path) => {
+    const apply = (path: string, content: string) => {
+      const view = viewRef.current
+      if (path === useWorkspaceStore.getState().activeTabPath && view !== null) {
+        if (view.state.doc.toString() === content) return
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: content } })
+      } else {
+        const cached = statesRef.current.get(path)
+        if (cached !== undefined) {
+          statesRef.current.set(
+            path,
+            cached.update({ changes: { from: 0, to: cached.doc.length, insert: content } }).state,
+          )
+        }
+      }
+    }
+    const offDisk = onDiskContent(apply)
+    const offNote = window.api.window.onNoteChanged((path) => {
       void useWorkspaceStore
         .getState()
         .reloadTab(path)
         .then((content) => {
-          if (content === null) return
-          const view = viewRef.current
-          if (path === useWorkspaceStore.getState().activeTabPath && view !== null) {
-            view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: content } })
-          } else {
-            const cached = statesRef.current.get(path)
-            if (cached !== undefined) {
-              statesRef.current.set(
-                path,
-                cached.update({ changes: { from: 0, to: cached.doc.length, insert: content } })
-                  .state,
-              )
-            }
-          }
+          if (content !== null) apply(path, content)
         })
     })
+    return () => {
+      offDisk()
+      offNote()
+    }
   }, [])
 
   return (

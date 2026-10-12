@@ -1,9 +1,10 @@
 import { createTabState, getEditorTheme, themeCompartment } from '@renderer/editor/setup'
+import { useT } from '@renderer/i18n'
 import { useStickyStore } from '@renderer/stores/stickyStore'
 import { useThemeStore } from '@renderer/stores/themeStore'
 import { EditorView } from 'codemirror'
 import { X } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 /** `-webkit-app-region` isn't in React's CSSProperties; cast where we set it. */
 const dragRegion = { WebkitAppRegion: 'drag' } as React.CSSProperties
@@ -14,15 +15,22 @@ const noDragRegion = { WebkitAppRegion: 'no-drag' } as React.CSSProperties
  * button + the reused CodeMirror editor, backed by the single-note `stickyStore`.
  * Rendered for the `#/sticky/<path>` route.
  */
-export function StickyNote({ notePath }: { notePath: string }) {
+export function StickyNote({ notePath: routePath }: { notePath: string }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
+  // The route path loads the note once; after a rename/move main sends the new
+  // path (`relocate`), and everything else follows the store's current path.
+  const [initialPath] = useState(routePath)
+  const notePath = useStickyStore((s) => s.path) ?? initialPath
 
   const status = useStickyStore((s) => s.status)
   const error = useStickyStore((s) => s.error)
   const init = useStickyStore((s) => s.init)
   const loadTheme = useThemeStore((s) => s.loadTheme)
   const resolved = useThemeStore((s) => s.resolved)
+  const colorThemeId = useThemeStore((s) => s.colorThemeId)
+  const fontSize = useThemeStore((s) => s.fontSize)
+  const t = useT()
 
   const title =
     notePath
@@ -33,8 +41,23 @@ export function StickyNote({ notePath }: { notePath: string }) {
   // Load theme + note content on mount.
   useEffect(() => {
     void loadTheme()
-    void init(notePath)
-  }, [loadTheme, init, notePath])
+    void init(initialPath)
+  }, [loadTheme, init, initialPath])
+
+  // The note (or a folder holding it) was renamed/moved: keep editing it at its
+  // new path. Arrives before `filesChanged`, so the validity re-check passes.
+  useEffect(() => {
+    return window.api.window.sticky.onPathChanged((path) => {
+      useStickyStore.getState().relocate(path)
+      history.replaceState(null, '', `#/sticky/${encodeURIComponent(path)}`)
+    })
+  }, [])
+
+  // The note is being locked: hand main the unsaved draft and stop saving.
+  useEffect(
+    () => window.api.window.sticky.onFlushRequest(() => useStickyStore.getState().freeze()),
+    [],
+  )
 
   // Listen for theme changes from the main window.
   useEffect(() => {
@@ -88,7 +111,7 @@ export function StickyNote({ notePath }: { notePath: string }) {
     if (status !== 'ready' || hostRef.current === null || viewRef.current !== null) return
     const state = createTabState(
       {
-        path: notePath,
+        path: useStickyStore.getState().path ?? initialPath,
         doc: useStickyStore.getState().draft,
         onDocChange: (text) => useStickyStore.getState().setDraft(text),
         onSave: () => void useStickyStore.getState().save(),
@@ -102,15 +125,32 @@ export function StickyNote({ notePath }: { notePath: string }) {
       view.destroy()
       viewRef.current = null
     }
-  }, [status, notePath])
+  }, [status, initialPath])
 
-  // Reconfigure the editor theme if the resolved theme changes after mount.
+  // Apply the editor colour theme + font size (same as the main editor) once
+  // mounted, and again when the mode, colour theme or font size changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: status/colorThemeId/fontSize are re-run triggers; values are read from the store
   useEffect(() => {
     const view = viewRef.current
     if (view === null) return
-    const fs = useThemeStore.getState().fontSize
-    view.dispatch({ effects: themeCompartment.reconfigure(getEditorTheme(resolved, undefined, fs)) })
-  }, [resolved])
+    const { fontSize: fs, getActiveColorTheme } = useThemeStore.getState()
+    view.dispatch({
+      effects: themeCompartment.reconfigure(getEditorTheme(resolved, getActiveColorTheme(), fs)),
+    })
+  }, [resolved, status, colorThemeId, fontSize])
+
+  // The main window stores colour-theme picks in localStorage (shared origin)
+  // and font size in settings: pick both up live / when this sticky is focused.
+  useEffect(() => {
+    const onStorage = () => useThemeStore.getState().syncFromStorage()
+    const onFocus = () => void useThemeStore.getState().loadTheme()
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('focus', onFocus)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [])
 
   return (
     <div className="flex h-screen flex-col bg-slate-950 dark:bg-slate-950 light:bg-white">
@@ -131,10 +171,10 @@ export function StickyNote({ notePath }: { notePath: string }) {
             window.api.window.sticky.close(notePath)
           }}
           className="rounded p-0.5 text-slate-500 transition hover:bg-slate-800 hover:text-slate-300 light:hover:bg-slate-100 light:hover:text-slate-700"
-          title="Close sticky"
+          title={t('capture.sticky.close')}
         >
           <X className="size-3.5" aria-hidden="true" />
-          <span className="sr-only">Close sticky</span>
+          <span className="sr-only">{t('capture.sticky.close')}</span>
         </button>
       </div>
 
@@ -142,15 +182,15 @@ export function StickyNote({ notePath }: { notePath: string }) {
         <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center">
           <p className="text-xs text-slate-400 light:text-slate-500">
             {error === 'note-locked'
-              ? 'This note is locked and can’t be shown here.'
-              : 'This note can’t be shown.'}
+              ? t('capture.sticky.lockedError')
+              : t('capture.sticky.genericError')}
           </p>
           <button
             type="button"
             onClick={() => window.api.window.sticky.close(notePath)}
             className="rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700 light:bg-slate-200 light:text-slate-700"
           >
-            Close
+            {t('capture.sticky.closeButton')}
           </button>
         </div>
       ) : (

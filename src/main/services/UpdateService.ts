@@ -1,6 +1,7 @@
 import type { UpdateState } from '@shared/types'
 import { app, shell } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import { tm } from '../i18n'
 
 const GITHUB_OWNER = 'sefacakirrr'
 const GITHUB_REPO = 'Slate'
@@ -118,8 +119,36 @@ export class UpdateService {
     )
   }
 
+  /**
+   * Silent launch-time check (packaged builds): electron-updater downloads in the
+   * background and shows the native "ready to install" notification. On Windows
+   * the same listeners as a manual check are wired first, so a download started
+   * at launch drives the in-app progress bar / "Restart to update" too — before,
+   * it ran unwired and the UI never learned about it.
+   */
+  checkOnLaunch(): void {
+    if (!app.isPackaged) return
+    if (!this.isMac) this.wireWindows()
+    autoUpdater
+      .checkForUpdatesAndNotify({
+        title: tm('notification.updateReadyTitle'),
+        body: tm('notification.updateReadyBody'),
+      })
+      .catch((err) => console.error('auto-update check failed:', err))
+  }
+
   /** Windows path: electron-updater checks, auto-downloads, and reports progress. */
   private checkWindows(): void {
+    this.wireWindows()
+    autoUpdater
+      .checkForUpdates()
+      .catch((err) =>
+        this.emit({ status: 'error', error: err instanceof Error ? err.message : String(err) }),
+      )
+  }
+
+  /** Subscribes to electron-updater events once and forwards them as `UpdateState`. */
+  private wireWindows(): void {
     if (!this.winWired) {
       autoUpdater.on('update-available', (info) => {
         this.lastNotes = summarizeReleaseNotes(info.releaseNotes)
@@ -141,11 +170,6 @@ export class UpdateService {
       )
       this.winWired = true
     }
-    autoUpdater
-      .checkForUpdates()
-      .catch((err) =>
-        this.emit({ status: 'error', error: err instanceof Error ? err.message : String(err) }),
-      )
   }
 
   /** macOS path: compare the latest GitHub release to the running version. */

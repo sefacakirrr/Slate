@@ -75,8 +75,10 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
 
   openDailyNote: async (date) => {
     const result = await api.dailynotes.open(date)
-    if (result.ok) return result.data
-    return null
+    if (!result.ok) return null
+    // A new daily note must show its dot without waiting for a month change.
+    void get().loadMonthNotes(get().viewMonth)
+    return result.data
   },
 
   toggleCalendar: () => set((s) => ({ calendarOpen: !s.calendarOpen })),

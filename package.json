@@ -1,6 +1,6 @@
 {
   "name": "slate",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "Personal local-first notes app for code and life.",
   "main": "./out/main/index.js",
   "author": {
@@ -25,12 +25,15 @@
     "dist:linux": "electron-vite build && electron-builder --linux",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
-    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run typecheck:e2e",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check --write .",
     "test": "node scripts/run-vitest-electron.mjs run",
     "test:watch": "node scripts/run-vitest-electron.mjs",
+    "test:e2e": "electron-vite build && playwright test -c e2e/playwright.config.ts",
+    "test:e2e:nobuild": "playwright test -c e2e/playwright.config.ts",
     "rebuild": "electron-builder install-app-deps"
   },
   "dependencies": {
@@ -44,6 +47,7 @@
     "@biomejs/biome": "^2.2.4",
     "@codemirror/lang-markdown": "^6.3.1",
     "@codemirror/language-data": "^6.5.2",
+    "@playwright/test": "^1.64.0",
     "@tailwindcss/vite": "^4.0.0",
     "@types/adm-zip": "^0.5.8",
     "@types/better-sqlite3": "^7.6.12",

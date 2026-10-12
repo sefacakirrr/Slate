@@ -1,4 +1,5 @@
 import { api } from '@renderer/api'
+import { currentLocale, t as translate, useT } from '@renderer/i18n'
 import { isLockedPath, useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import type { NoteListItem } from '@shared/types'
@@ -12,14 +13,15 @@ function formatDate(mtime: number): string {
   const diffDays = Math.floor(diffMs / 86400000)
 
   if (diffDays === 0) {
-    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+    return d.toLocaleTimeString(currentLocale(), { hour: '2-digit', minute: '2-digit' })
   }
-  if (diffDays === 1) return 'Yesterday'
-  if (diffDays < 7) return `${diffDays} days ago`
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  if (diffDays === 1) return translate('common.time.yesterday')
+  if (diffDays < 7) return translate('common.time.daysAgo', { count: diffDays })
+  return d.toLocaleDateString(currentLocale(), { month: 'short', day: 'numeric' })
 }
 
 export function NotesList() {
+  const t = useT()
   const [notes, setNotes] = useState<NoteListItem[]>([])
   const activeTabPath = useWorkspaceStore((s) => s.activeTabPath)
   const openTab = useWorkspaceStore((s) => s.openTab)
@@ -41,7 +43,7 @@ export function NotesList() {
   }, [load])
 
   if (notes.length === 0) {
-    return <div className="px-3 py-4 text-xs text-slate-500">No notes yet.</div>
+    return <div className="px-3 py-4 text-xs text-slate-500">{t('sidebar.notesList.empty')}</div>
   }
 
   return (
@@ -70,7 +72,7 @@ export function NotesList() {
               {locked && (
                 <Lock
                   className="size-3 shrink-0 text-amber-500/80 light:text-amber-600"
-                  aria-label="Locked"
+                  aria-label={t('sidebar.notesList.locked')}
                 />
               )}
               <span className="truncate">{note.title}</span>

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Candidate 2 "Fold S": an S drawn as two bands, like two pages folded over each other. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#232d45"/>
+      <stop offset="1" stop-color="#0d1220"/>
+    </linearGradient>
+    <linearGradient id="hl" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".10"/>
+      <stop offset=".45" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="80" y="80" width="864" height="864" rx="192" fill="url(#tile)"/>
+  <rect x="80" y="80" width="864" height="864" rx="192" fill="url(#hl)"/>
+  <rect x="82" y="82" width="860" height="860" rx="190" fill="none" stroke="#3a4766" stroke-width="4"/>
+  <g fill="none" stroke-width="124">
+    <!-- lower page (drawn first so the upper one folds over it) -->
+    <path d="M480 512 H600 A105 105 0 0 1 600 722 H330" stroke="#8b5cf6" stroke-linecap="round"/>
+    <!-- soft shadow where the upper page folds over the lower one -->
+    <path d="M520 520 H572" stroke="#3b1580" stroke-opacity=".75" stroke-width="108" stroke-linecap="round"/>
+    <!-- upper page -->
+    <path d="M694 302 H430 A105 105 0 0 0 430 512 H560" stroke="#c4b5fd" stroke-linecap="round"/>
+  </g>
+</svg>

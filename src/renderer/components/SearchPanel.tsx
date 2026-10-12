@@ -1,3 +1,4 @@
+import { useT } from '@renderer/i18n'
 import { useSearchStore } from '@renderer/stores/searchStore'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import type { SearchResult } from '@shared/types'
@@ -21,6 +22,7 @@ function titleOf(path: string): string {
  * opens the note via the E3 workspace. Esc or a backdrop click dismisses.
  */
 export function SearchPanel() {
+  const t = useT()
   const open = useSearchStore((s) => s.open)
   const query = useSearchStore((s) => s.query)
   const results = useSearchStore((s) => s.results)
@@ -39,12 +41,13 @@ export function SearchPanel() {
 
   // Debounce: run the query DEBOUNCE_MS after the last keystroke. Re-runs when
   // the panel opens (query '' clears results). The timer is cleared on each
-  // change so fast typing fires at most one IPC.
+  // change so fast typing fires at most one IPC. Tag results (`#tag` query set
+  // by a tag chip) are already final: a full-text run would replace them.
   useEffect(() => {
-    if (!open) return
-    const t = setTimeout(() => void runQuery(query), DEBOUNCE_MS)
-    return () => clearTimeout(t)
-  }, [open, query, runQuery])
+    if (!open || activeTag !== null) return
+    const timer = setTimeout(() => void runQuery(query), DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [open, query, activeTag, runQuery])
 
   if (!open) return null
 
@@ -66,7 +69,7 @@ export function SearchPanel() {
     <div className="fixed inset-0 z-40 flex justify-center pt-[12vh]">
       <button
         type="button"
-        aria-label="Close search"
+        aria-label={t('sidebar.search.close')}
         onClick={closePanel}
         className="absolute inset-0 size-full cursor-default bg-slate-950/70 backdrop-blur-sm"
       />
@@ -74,7 +77,7 @@ export function SearchPanel() {
         className="relative mx-4 flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-slate-700/80 bg-slate-800 shadow-2xl shadow-black/50"
         role="dialog"
         aria-modal="true"
-        aria-label="Search notes"
+        aria-label={t('sidebar.search.label')}
       >
         <div className="flex items-center gap-2 border-b border-slate-700/70 px-3.5">
           <Search className="size-4 shrink-0 text-slate-500" aria-hidden="true" />
@@ -83,8 +86,8 @@ export function SearchPanel() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Search notes…"
-            aria-label="Search notes"
+            placeholder={t('sidebar.search.placeholder')}
+            aria-label={t('sidebar.search.label')}
             className="min-w-0 flex-1 bg-transparent py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none"
           />
         </div>
@@ -115,11 +118,12 @@ function Results({
   onOpen: (path: string) => void
   activeTag: string | null
 }) {
+  const t = useT()
   if (query.trim() === '' && activeTag === null) {
-    return <Hint>Type to search across every note in your vault.</Hint>
+    return <Hint>{t('sidebar.search.hint')}</Hint>
   }
   if (results.length === 0) {
-    return <Hint>{loading ? 'Searching…' : 'No results.'}</Hint>
+    return <Hint>{loading ? t('sidebar.search.searching') : t('sidebar.search.noResults')}</Hint>
   }
   return (
     <ul className="py-1">

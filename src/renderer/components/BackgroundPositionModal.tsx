@@ -1,3 +1,4 @@
+import { useT } from '@renderer/i18n'
 import { Minus, Move, Plus, RotateCcw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -16,6 +17,7 @@ export function BackgroundPositionModal({
   onConfirm,
   onCancel,
 }: Props) {
+  const t = useT()
   const [position, setPosition] = useState(initialPosition)
   const [scale, setScale] = useState(initialScale)
   const [dragging, setDragging] = useState(false)
@@ -74,7 +76,10 @@ export function BackgroundPositionModal({
 
   const zoomIn = () => setScale((s) => Math.min(300, s + 10))
   const zoomOut = () => setScale((s) => Math.max(100, s - 10))
-  const reset = () => { setPosition(50); setScale(100) }
+  const reset = () => {
+    setPosition(50)
+    setScale(100)
+  }
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-black/90 backdrop-blur-sm">
@@ -82,7 +87,9 @@ export function BackgroundPositionModal({
       <div className="flex items-center justify-between border-b border-slate-700/50 px-6 py-3">
         <div className="flex items-center gap-3">
           <Move className="size-4 text-slate-400" />
-          <span className="text-sm font-medium text-white">Adjust Background</span>
+          <span className="text-sm font-medium text-white">
+            {t('settings.backgroundModal.title')}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -90,14 +97,14 @@ export function BackgroundPositionModal({
             onClick={onCancel}
             className="rounded-md px-4 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-slate-700 hover:text-white"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             type="button"
             onClick={() => onConfirm(position, scale)}
             className="rounded-md bg-accent-500 px-4 py-1.5 text-xs font-medium text-white transition hover:bg-accent-600"
           >
-            Apply
+            {t('settings.backgroundModal.apply')}
           </button>
         </div>
       </div>
@@ -122,8 +129,10 @@ export function BackgroundPositionModal({
         >
           <div className="flex flex-col items-center gap-1 rounded-xl bg-black/60 px-5 py-3 backdrop-blur-sm">
             <Move className="size-5 text-white/80" />
-            <span className="text-xs text-white/80">Drag to reposition</span>
-            <span className="text-[10px] text-white/50">Scroll to zoom</span>
+            <span className="text-xs text-white/80">{t('settings.backgroundModal.dragHint')}</span>
+            <span className="text-[10px] text-white/50">
+              {t('settings.backgroundModal.scrollHint')}
+            </span>
           </div>
         </div>
       </div>
@@ -136,17 +145,17 @@ export function BackgroundPositionModal({
             type="button"
             onClick={zoomOut}
             disabled={scale <= 100}
+            title={t('settings.backgroundModal.zoomOut')}
             className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-700 hover:text-white disabled:opacity-30"
           >
             <Minus className="size-4" />
           </button>
-          <div className="w-20 text-center text-xs text-slate-300">
-            {Math.round(scale)}%
-          </div>
+          <div className="w-20 text-center text-xs text-slate-300">{Math.round(scale)}%</div>
           <button
             type="button"
             onClick={zoomIn}
             disabled={scale >= 300}
+            title={t('settings.backgroundModal.zoomIn')}
             className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-700 hover:text-white disabled:opacity-30"
           >
             <Plus className="size-4" />
@@ -168,7 +177,7 @@ export function BackgroundPositionModal({
         {/* Reset + position info */}
         <div className="flex items-center gap-3">
           <span className="text-xs text-slate-500">
-            Position: {Math.round(position)}%
+            {t('settings.backgroundModal.position', { percent: Math.round(position) })}
           </span>
           <button
             type="button"
@@ -176,7 +185,7 @@ export function BackgroundPositionModal({
             className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-slate-400 transition hover:bg-slate-700 hover:text-white"
           >
             <RotateCcw className="size-3" />
-            Reset
+            {t('settings.backgroundModal.reset')}
           </button>
         </div>
       </div>

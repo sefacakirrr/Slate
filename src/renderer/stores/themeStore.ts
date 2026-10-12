@@ -1,5 +1,9 @@
 import { api } from '@renderer/api'
-import { BUILTIN_THEMES, type ColorTheme, validateImportedTheme } from '@renderer/editor/colorThemes'
+import {
+  BUILTIN_THEMES,
+  type ColorTheme,
+  validateImportedTheme,
+} from '@renderer/editor/colorThemes'
 import type { ThemeMode } from '@shared/types'
 import { create } from 'zustand'
 
@@ -26,13 +30,16 @@ type ThemeState = {
   setColorTheme: (id: string) => void
   importTheme: (json: unknown) => ColorTheme | null
   removeCustomTheme: (id: string) => void
-  setBackgroundImage: (dataUrl: string | null) => void
+  /** Returns false when the image could not be stored (applies for this session only). */
+  setBackgroundImage: (dataUrl: string | null) => boolean
   setBackgroundOpacity: (opacity: number) => void
   setBackgroundPosition: (position: number) => void
   setBackgroundScale: (scale: number) => void
   setFontSize: (size: number) => void
   increaseFontSize: () => void
   decreaseFontSize: () => void
+  /** Re-reads the colour theme choice another window stored (localStorage `storage` event). */
+  syncFromStorage: () => void
   allThemes: () => ColorTheme[]
   getActiveColorTheme: () => ColorTheme
 }
@@ -67,15 +74,36 @@ function saveCustomThemes(themes: ColorTheme[]): void {
   localStorage.setItem(CUSTOM_THEMES_KEY, JSON.stringify(themes))
 }
 
+/** A stored number, or `fallback` when absent/invalid. `Number(x) || d` turned a saved 0 into d. */
+function storedNumber(key: string, fallback: number): number {
+  const raw = localStorage.getItem(key)
+  if (raw === null || raw.trim() === '') return fallback
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : fallback
+}
+
+/** The two built-in defaults follow the light/dark mode; any other pick is kept as chosen. */
+const DEFAULT_THEME_IDS: Record<'dark' | 'light', string> = {
+  dark: 'default-dark',
+  light: 'default-light',
+}
+
+/**
+ * One OS colour-scheme listener per renderer, installed on first load whatever
+ * the mode: it acts only while the mode is System, so switching to System later
+ * in the session still follows the OS.
+ */
+let systemListenerInstalled = false
+
 export const useThemeStore = create<ThemeState>((set, get) => ({
   theme: 'dark',
   resolved: 'dark',
   colorThemeId: localStorage.getItem(COLOR_THEME_KEY) || 'default-dark',
   customThemes: loadCustomThemes(),
   backgroundImage: localStorage.getItem(BG_IMAGE_KEY),
-  backgroundOpacity: Number(localStorage.getItem(BG_OPACITY_KEY)) || 0.15,
-  backgroundPosition: Number(localStorage.getItem(BG_POSITION_KEY)) || 50,
-  backgroundScale: Number(localStorage.getItem(BG_SCALE_KEY)) || 100,
+  backgroundOpacity: storedNumber(BG_OPACITY_KEY, 0.15),
+  backgroundPosition: storedNumber(BG_POSITION_KEY, 50),
+  backgroundScale: storedNumber(BG_SCALE_KEY, 100),
   fontSize: 14,
 
   loadTheme: async () => {
@@ -92,7 +120,8 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       applyFontSize(fs)
     }
 
-    if (theme === 'system') {
+    if (!systemListenerInstalled) {
+      systemListenerInstalled = true
       const mq = window.matchMedia('(prefers-color-scheme: dark)')
       mq.addEventListener('change', () => {
         const current = get().theme
@@ -137,15 +166,28 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   removeCustomTheme: (id) => {
     const updated = get().customThemes.filter((t) => t.id !== id)
     saveCustomThemes(updated)
-    const active = get().colorThemeId === id ? 'default-dark' : get().colorThemeId
+    // Removing the active theme falls back to the default for the current mode
+    // (getActiveColorTheme keeps either default id following light/dark).
+    const active =
+      get().colorThemeId === id ? DEFAULT_THEME_IDS[get().resolved] : get().colorThemeId
     if (active !== get().colorThemeId) localStorage.setItem(COLOR_THEME_KEY, active)
     set({ customThemes: updated, colorThemeId: active })
   },
 
   setBackgroundImage: (dataUrl) => {
-    if (dataUrl) localStorage.setItem(BG_IMAGE_KEY, dataUrl)
-    else localStorage.removeItem(BG_IMAGE_KEY)
+    // Applied for this session either way; false = too large for localStorage
+    // (quota), so it won't survive a restart and the caller should say so.
+    let persisted = true
+    try {
+      if (dataUrl) localStorage.setItem(BG_IMAGE_KEY, dataUrl)
+      else localStorage.removeItem(BG_IMAGE_KEY)
+    } catch (err) {
+      console.error('background image not stored:', err)
+      localStorage.removeItem(BG_IMAGE_KEY)
+      persisted = false
+    }
     set({ backgroundImage: dataUrl })
+    return persisted
   },
 
   setBackgroundOpacity: (opacity) => {
@@ -178,10 +220,22 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     get().setFontSize(get().fontSize - 1)
   },
 
+  syncFromStorage: () => {
+    set({
+      colorThemeId: localStorage.getItem(COLOR_THEME_KEY) || 'default-dark',
+      customThemes: loadCustomThemes(),
+    })
+  },
+
   allThemes: () => [...BUILTIN_THEMES, ...get().customThemes],
 
   getActiveColorTheme: () => {
-    const id = get().colorThemeId
+    let id = get().colorThemeId
+    // Still on a built-in default: use the one matching the current mode, so
+    // Light mode doesn't keep the dark editor colours.
+    if (id === DEFAULT_THEME_IDS.dark || id === DEFAULT_THEME_IDS.light) {
+      id = DEFAULT_THEME_IDS[get().resolved]
+    }
     const all = get().allThemes()
     return all.find((t) => t.id === id) || BUILTIN_THEMES[0]
   },

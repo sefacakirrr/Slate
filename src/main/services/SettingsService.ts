@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import type { ReminderRecord, ThemeMode } from '@shared/types'
+import type { Language, ReminderRecord, ThemeMode } from '@shared/types'
 import type { VaultSecret } from './EncryptionService'
 
 /**
@@ -49,6 +49,17 @@ type SettingsData = {
   reminders: ReminderRecord[]
   /** Editor / UI font size in pixels. */
   fontSize: number
+  /** Register Slate as a login item (applied only in packaged builds). */
+  launchAtLogin: boolean
+  /** Closing the main window hides it to the tray instead of quitting. */
+  closeToTray: boolean
+  /**
+   * Absolute paths of external (outside-vault) files open as tabs — the part of
+   * main's read/write allowlist that survives a restart. Written by main only.
+   */
+  externalFiles: string[]
+  /** UI language; null until the user picks one (main then follows the OS locale). */
+  language: Language | null
 }
 
 const DEFAULTS: SettingsData = {
@@ -62,6 +73,31 @@ const DEFAULTS: SettingsData = {
   noteOrder: {},
   reminders: [],
   fontSize: 14,
+  launchAtLogin: true,
+  closeToTray: true,
+  externalFiles: [],
+  language: null,
+}
+
+/**
+ * Re-keys custom sidebar orders after a folder rename/move: `from` and every
+ * `from/…` key move under `to`. Returns the same object when nothing changed.
+ */
+export function rekeyFolderOrder(
+  order: Record<string, string[]>,
+  from: string,
+  to: string,
+): Record<string, string[]> {
+  if (from === to) return order
+  const prefix = `${from}/`
+  const keys = Object.keys(order).filter((k) => k === from || k.startsWith(prefix))
+  if (keys.length === 0) return order
+  const next: Record<string, string[]> = {}
+  for (const [k, names] of Object.entries(order)) {
+    if (!keys.includes(k)) next[k] = names
+  }
+  for (const k of keys) next[to + k.slice(from.length)] = order[k]
+  return next
 }
 
 /**
@@ -108,6 +144,22 @@ export class SettingsService {
     this.cache = data
   }
 
+  /** Tail of the write queue: every mutator runs its read-modify-write here. */
+  private writeQueue: Promise<unknown> = Promise.resolve()
+
+  /**
+   * Runs one read-modify-write after every earlier one has finished, so two
+   * concurrent mutators (even of different fields) can't persist stale
+   * snapshots over each other or share the temp file. Queued bodies must use
+   * `load`/`persist` directly, never another public mutator (that would wait
+   * on itself and deadlock). A failed write doesn't block later ones.
+   */
+  private serialize<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.writeQueue.then(fn, fn)
+    this.writeQueue = run.catch(() => {})
+    return run
+  }
+
   async getVaultPath(): Promise<string | null> {
     const data = await this.load()
     return data.vaultPath
@@ -117,9 +169,11 @@ export class SettingsService {
     return this.cache?.vaultPath ?? null
   }
 
-  async setVaultPath(vaultPath: string): Promise<void> {
-    const data = await this.load()
-    await this.persist({ ...data, vaultPath })
+  setVaultPath(vaultPath: string): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      await this.persist({ ...data, vaultPath })
+    })
   }
 
   async getWorkspace(): Promise<WorkspaceData> {
@@ -129,9 +183,11 @@ export class SettingsService {
     return data.workspace ?? DEFAULTS.workspace
   }
 
-  async setWorkspace(workspace: WorkspaceData): Promise<void> {
-    const data = await this.load()
-    await this.persist({ ...data, workspace })
+  setWorkspace(workspace: WorkspaceData): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      await this.persist({ ...data, workspace })
+    })
   }
 
   async getTheme(): Promise<ThemeMode> {
@@ -139,9 +195,11 @@ export class SettingsService {
     return data.theme ?? DEFAULTS.theme
   }
 
-  async setTheme(theme: ThemeMode): Promise<void> {
-    const data = await this.load()
-    await this.persist({ ...data, theme })
+  setTheme(theme: ThemeMode): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      await this.persist({ ...data, theme })
+    })
   }
 
   /** The stored vault-encryption material, or null if no password is set. */
@@ -151,9 +209,11 @@ export class SettingsService {
   }
 
   /** Persists the (non-secret) salt + verifier. Never receives the password. */
-  async setEncryption(encryption: VaultSecret): Promise<void> {
-    const data = await this.load()
-    await this.persist({ ...data, encryption })
+  setEncryption(encryption: VaultSecret): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      await this.persist({ ...data, encryption })
+    })
   }
 
   async getPasswordHint(): Promise<string | null> {
@@ -161,9 +221,11 @@ export class SettingsService {
     return data.passwordHint ?? null
   }
 
-  async setPasswordHint(hint: string | null): Promise<void> {
-    const data = await this.load()
-    await this.persist({ ...data, passwordHint: hint })
+  setPasswordHint(hint: string | null): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      await this.persist({ ...data, passwordHint: hint })
+    })
   }
 
   /** The pinned sticky notes (path + geometry), or [] if none. */
@@ -173,24 +235,28 @@ export class SettingsService {
   }
 
   /** Replaces the full set of pinned stickies. */
-  async setStickies(stickies: StickyRecord[]): Promise<void> {
-    const data = await this.load()
-    await this.persist({ ...data, stickies })
+  setStickies(stickies: StickyRecord[]): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      await this.persist({ ...data, stickies })
+    })
   }
 
   /**
    * Upserts one sticky's geometry (adds it if not present). Used both when a
    * sticky is opened and when it is moved/resized.
    */
-  async updateStickyGeometry(path: string, bounds: StickyRecord['bounds']): Promise<void> {
-    const data = await this.load()
-    const stickies = data.stickies ?? []
-    const idx = stickies.findIndex((s) => s.path === path)
-    const next =
-      idx === -1
-        ? [...stickies, { path, bounds }]
-        : stickies.map((s) => (s.path === path ? { path, bounds } : s))
-    await this.persist({ ...data, stickies: next })
+  updateStickyGeometry(path: string, bounds: StickyRecord['bounds']): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      const stickies = data.stickies ?? []
+      const idx = stickies.findIndex((s) => s.path === path)
+      const next =
+        idx === -1
+          ? [...stickies, { path, bounds }]
+          : stickies.map((s) => (s.path === path ? { path, bounds } : s))
+      await this.persist({ ...data, stickies: next })
+    })
   }
 
   /** Whether auto-save is enabled (Epic 13). Pre-existing settings files → default true. */
@@ -199,9 +265,11 @@ export class SettingsService {
     return data.autoSave ?? DEFAULTS.autoSave
   }
 
-  async setAutoSave(autoSave: boolean): Promise<void> {
-    const data = await this.load()
-    await this.persist({ ...data, autoSave })
+  setAutoSave(autoSave: boolean): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      await this.persist({ ...data, autoSave })
+    })
   }
 
   /** Custom sidebar order map (folder path → child names). {} if never set. */
@@ -211,17 +279,32 @@ export class SettingsService {
   }
 
   /** Replaces one level's custom order, keeping the rest of the map. */
-  async setNoteOrder(folder: string, names: string[]): Promise<void> {
-    const data = await this.load()
-    const noteOrder = { ...(data.noteOrder ?? {}), [folder]: names }
-    await this.persist({ ...data, noteOrder })
+  setNoteOrder(folder: string, names: string[]): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      const noteOrder = { ...(data.noteOrder ?? {}), [folder]: names }
+      await this.persist({ ...data, noteOrder })
+    })
+  }
+
+  /** A folder was renamed/moved: its (and its subfolders') custom orders follow it. */
+  moveNoteOrderFolder(from: string, to: string): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      const current = data.noteOrder ?? {}
+      const noteOrder = rekeyFolderOrder(current, from, to)
+      if (noteOrder === current) return
+      await this.persist({ ...data, noteOrder })
+    })
   }
 
   /** Removes one sticky from the persisted set (on close). */
-  async removeSticky(path: string): Promise<void> {
-    const data = await this.load()
-    const stickies = (data.stickies ?? []).filter((s) => s.path !== path)
-    await this.persist({ ...data, stickies })
+  removeSticky(path: string): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      const stickies = (data.stickies ?? []).filter((s) => s.path !== path)
+      await this.persist({ ...data, stickies })
+    })
   }
 
   async getFontSize(): Promise<number> {
@@ -229,9 +312,65 @@ export class SettingsService {
     return data.fontSize ?? 14
   }
 
-  async setFontSize(fontSize: number): Promise<void> {
+  setFontSize(fontSize: number): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      await this.persist({ ...data, fontSize })
+    })
+  }
+
+  async getLaunchAtLogin(): Promise<boolean> {
     const data = await this.load()
-    await this.persist({ ...data, fontSize })
+    return data.launchAtLogin ?? DEFAULTS.launchAtLogin
+  }
+
+  setLaunchAtLogin(launchAtLogin: boolean): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      await this.persist({ ...data, launchAtLogin })
+    })
+  }
+
+  async getCloseToTray(): Promise<boolean> {
+    const data = await this.load()
+    return data.closeToTray ?? DEFAULTS.closeToTray
+  }
+
+  setCloseToTray(closeToTray: boolean): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      await this.persist({ ...data, closeToTray })
+    })
+  }
+
+  /** The chosen UI language, or null if never chosen (the caller falls back to the OS locale). */
+  async getLanguage(): Promise<Language | null> {
+    const data = await this.load()
+    return data.language === 'en' || data.language === 'tr' ? data.language : null
+  }
+
+  setLanguage(language: Language): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      await this.persist({ ...data, language })
+    })
+  }
+
+  async getExternalFiles(): Promise<string[]> {
+    const data = await this.load()
+    return Array.isArray(data.externalFiles) ? data.externalFiles : []
+  }
+
+  /** Persists the external-file allowlist; skips the write when unchanged. */
+  setExternalFiles(externalFiles: string[]): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      const current = Array.isArray(data.externalFiles) ? data.externalFiles : []
+      const same =
+        current.length === externalFiles.length && current.every((p, i) => p === externalFiles[i])
+      if (same) return
+      await this.persist({ ...data, externalFiles })
+    })
   }
 
   async getReminders(): Promise<ReminderRecord[]> {
@@ -239,30 +378,40 @@ export class SettingsService {
     return data.reminders ?? []
   }
 
-  async setReminders(reminders: ReminderRecord[]): Promise<void> {
-    const data = await this.load()
-    await this.persist({ ...data, reminders })
+  setReminders(reminders: ReminderRecord[]): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      await this.persist({ ...data, reminders })
+    })
   }
 
-  async addReminder(reminder: ReminderRecord): Promise<void> {
-    const data = await this.load()
-    await this.persist({ ...data, reminders: [...(data.reminders ?? []), reminder] })
+  addReminder(reminder: ReminderRecord): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      await this.persist({ ...data, reminders: [...(data.reminders ?? []), reminder] })
+    })
   }
 
-  async removeReminder(id: string): Promise<void> {
-    const data = await this.load()
-    await this.persist({ ...data, reminders: (data.reminders ?? []).filter((r) => r.id !== id) })
+  removeReminder(id: string): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      await this.persist({ ...data, reminders: (data.reminders ?? []).filter((r) => r.id !== id) })
+    })
   }
 
-  async markReminderFired(id: string): Promise<void> {
-    const data = await this.load()
-    const reminders = (data.reminders ?? []).map((r) => (r.id === id ? { ...r, fired: true } : r))
-    await this.persist({ ...data, reminders })
+  markReminderFired(id: string): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      const reminders = (data.reminders ?? []).map((r) => (r.id === id ? { ...r, fired: true } : r))
+      await this.persist({ ...data, reminders })
+    })
   }
 
-  async updateReminder(reminder: ReminderRecord): Promise<void> {
-    const data = await this.load()
-    const reminders = (data.reminders ?? []).map((r) => (r.id === reminder.id ? reminder : r))
-    await this.persist({ ...data, reminders })
+  updateReminder(reminder: ReminderRecord): Promise<void> {
+    return this.serialize(async () => {
+      const data = await this.load()
+      const reminders = (data.reminders ?? []).map((r) => (r.id === reminder.id ? reminder : r))
+      await this.persist({ ...data, reminders })
+    })
   }
 }

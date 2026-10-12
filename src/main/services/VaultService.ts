@@ -1,6 +1,19 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, open, readdir, readFile, rename, rm, stat, unlink } from 'node:fs/promises'
-import { dirname, relative, resolve, sep } from 'node:path'
+import type { BigIntStats } from 'node:fs'
+import {
+  cp,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises'
+import { dirname, join, relative, resolve, sep } from 'node:path'
+import type { TrashItem } from '@shared/types'
 import { isEncryptedPath } from './EncryptionService'
 
 /** Extensions Slate treats as notes. User-decided at bootstrap. */
@@ -163,7 +176,7 @@ export class VaultService {
     } finally {
       await handle.close()
     }
-    await rename(tmp, abs)
+    await replaceWithTemp(tmp, abs)
   }
 
   /**
@@ -214,7 +227,7 @@ export class VaultService {
     } finally {
       await handle.close()
     }
-    await rename(tmp, abs)
+    await replaceWithTemp(tmp, abs)
   }
 
   /**
@@ -224,6 +237,7 @@ export class VaultService {
    * no check-then-write race. Throws `Error('file-exists')` if the path is taken.
    */
   async createNote(relPath: string): Promise<void> {
+    assertValidName(relPath)
     const abs = this.resolveSafe(relPath)
     await mkdir(dirname(abs), { recursive: true })
 
@@ -250,18 +264,14 @@ export class VaultService {
     // Accept locked notes (`.md.enc`) too, so a locked note can be moved/renamed
     // without the guard rejecting its `.enc` suffix.
     if (!isNoteFile(toRel)) throw new Error('invalid-extension')
+    assertValidName(toRel)
 
-    // No-overwrite guard: reject if something already lives at the target.
-    try {
-      await stat(toAbs)
-      throw new Error('file-exists')
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code
-      if (code !== 'ENOENT') throw err // re-throw 'file-exists' and real errors
-    }
+    // No-overwrite guard: reject if something already lives at the target —
+    // unless it's the source itself (a case-only rename on a case-insensitive FS).
+    if (await occupiedByOther(fromAbs, toAbs)) throw new Error('file-exists')
 
     await mkdir(dirname(toAbs), { recursive: true })
-    await rename(fromAbs, toAbs)
+    await renameRetrying(fromAbs, toAbs)
   }
 
   /** Moves/renames a folder. Rejects if the target already exists. */
@@ -269,15 +279,10 @@ export class VaultService {
     const fromAbs = this.resolveSafe(fromRel)
     const toAbs = this.resolveSafe(toRel)
     if (toAbs.startsWith(fromAbs + sep)) throw new Error('cannot-move-into-self')
-    try {
-      await stat(toAbs)
-      throw new Error('folder-exists')
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code
-      if (code !== 'ENOENT') throw err
-    }
+    assertValidName(toRel)
+    if (await occupiedByOther(fromAbs, toAbs)) throw new Error('folder-exists')
     await mkdir(dirname(toAbs), { recursive: true })
-    await rename(fromAbs, toAbs)
+    await renameRetrying(fromAbs, toAbs)
   }
 
   /**
@@ -285,6 +290,7 @@ export class VaultService {
    * segments are created. Rejects if the final path already exists as a file.
    */
   async createFolder(relPath: string): Promise<void> {
+    assertValidName(relPath)
     const abs = this.resolveSafe(relPath)
     await mkdir(abs, { recursive: true })
   }
@@ -311,6 +317,186 @@ export class VaultService {
     await rm(abs, { recursive: true, force: true })
   }
 
+  // ---------------------------------------------------------------------------
+  // Trash: user-initiated deletes move items into `<vault>/.trash/<id>/`, which
+  // every walker already skips (dot-prefixed segment). Each item dir holds the
+  // moved file/folder under its original basename plus a `meta.json`.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Deletes a note or folder into the trash and returns its trash record.
+   * Locked `.md.enc` notes are kept as-is (still encrypted). Throws `not-found`
+   * if the source is missing, `invalid-path` for the vault root or the trash
+   * itself.
+   *
+   * With `osTrash` (the OS recycle bin): the item is first *copied* into
+   * `.trash/<id>/` (so Undo and the in-app Trash view work), then the original
+   * is handed to `osTrash`. If the copy fails, nothing is deleted and the error
+   * propagates. If `osTrash` fails, the original is moved into the trash dir
+   * instead (the pre-recycle-bin behaviour). The original is never removed
+   * permanently. Without `osTrash`, the original is simply moved.
+   */
+  async moveToTrash(
+    relPath: string,
+    kind: TrashItem['kind'],
+    osTrash?: Remover,
+  ): Promise<TrashItem> {
+    const originalPath = normalizeRel(relPath)
+    const abs = this.resolveSafe(originalPath)
+    if (abs === this.vaultRoot || originalPath === '' || isTrashPath(originalPath)) {
+      throw new Error('invalid-path')
+    }
+    const s = await stat(abs).catch(() => null)
+    if (s === null) throw new Error('not-found')
+    if (kind === 'folder' ? !s.isDirectory() : !s.isFile()) throw new Error('kind-mismatch')
+
+    const name = originalPath.split('/').pop() ?? originalPath
+    const id = `${Date.now()}-${randomBytes(4).toString('hex')}`
+    const itemDir = this.trashItemDir(id)
+    const dest = join(itemDir, name)
+    await mkdir(itemDir, { recursive: true })
+    const base: TrashItem = { id, kind, name, originalPath, deletedAt: new Date().toISOString() }
+    // Meta first: a crash after it leaves an empty-but-listed item at worst,
+    // never an orphaned file the Trash view can't see.
+    try {
+      await writeMeta(itemDir, base)
+      if (osTrash === undefined) {
+        await rename(abs, dest)
+        return base
+      }
+      await cp(abs, dest, {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+        preserveTimestamps: true,
+      })
+    } catch (err) {
+      await rm(itemDir, { recursive: true, force: true })
+      throw err
+    }
+
+    // The copy is safe in `.trash`; now hand the original to the OS recycle bin.
+    try {
+      await osTrash(abs)
+      const item: TrashItem = { ...base, osTrashed: true }
+      await writeMeta(itemDir, item).catch(() => undefined)
+      return item
+    } catch (err) {
+      console.error('OS trash failed, moving into the in-vault trash instead:', err)
+    }
+    // Fallback: if the original is somehow already gone, the copy stands in for it.
+    if ((await stat(abs).catch(() => null)) === null) return base
+    try {
+      await rm(dest, { recursive: true, force: true })
+      await rename(abs, dest)
+    } catch (err) {
+      await rm(itemDir, { recursive: true, force: true })
+      throw err
+    }
+    return base
+  }
+
+  /** All trash items, newest first. Item dirs with missing/corrupt meta are skipped. */
+  async listTrash(): Promise<TrashItem[]> {
+    const root = join(this.vaultRoot, TRASH_DIR)
+    const entries = await readdir(root, { withFileTypes: true }).catch(() => [])
+    const items: TrashItem[] = []
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !TRASH_ID_RE.test(entry.name)) continue
+      const item = await readMeta(join(root, entry.name))
+      if (item !== null && item.id === entry.name) items.push(item)
+    }
+    items.sort((a, b) => b.deletedAt.localeCompare(a.deletedAt))
+    return items
+  }
+
+  /**
+   * Restores a trash item to its original path, recreating missing parent
+   * folders. If the target is taken, a ` (restored)` suffix (then a counter) is
+   * inserted before the extension. Returns the restored path, its kind, and the
+   * vault-relative note paths now back on disk (for re-indexing).
+   */
+  async restoreFromTrash(
+    id: string,
+  ): Promise<{ path: string; kind: TrashItem['kind']; notes: string[] }> {
+    const itemDir = this.trashItemDir(id)
+    const item = await readMeta(itemDir)
+    if (item === null) throw new Error('trash-item-not-found')
+    const src = join(itemDir, item.name)
+    await stat(src).catch(() => {
+      throw new Error('trash-item-not-found')
+    })
+
+    const target = await this.freeRestoreTarget(item)
+    const targetAbs = this.resolveSafe(target)
+    await mkdir(dirname(targetAbs), { recursive: true })
+    await rename(src, targetAbs)
+    await rm(itemDir, { recursive: true, force: true })
+
+    const notes =
+      item.kind === 'note'
+        ? [target]
+        : (await this.listNotes()).filter((p) => p.startsWith(`${target}/`))
+    return { path: target, kind: item.kind, notes }
+  }
+
+  /** Absolute path of a trash item's directory. */
+  trashItemDir(id: string): string {
+    if (!TRASH_ID_RE.test(id)) throw new Error('invalid-trash-id')
+    return join(this.vaultRoot, TRASH_DIR, id)
+  }
+
+  /**
+   * Permanently removes one trash item. An item whose original already went to
+   * the OS recycle bin (`osTrashed`) is just a copy and is removed with
+   * `rm -rf` (no duplicate in the recycle bin). Any other item holds the only
+   * copy, so it goes to `osTrash` when given (falling back to `rm -rf`).
+   */
+  async deleteTrashItem(id: string, osTrash?: Remover): Promise<void> {
+    const dir = this.trashItemDir(id)
+    await removeTrashDir(dir, await readMeta(dir), osTrash)
+  }
+
+  /** Permanently removes every trash item. Returns how many were removed. */
+  async emptyTrash(osTrash?: Remover): Promise<number> {
+    const items = await this.listTrash()
+    for (const item of items) await removeTrashDir(this.trashItemDir(item.id), item, osTrash)
+    return items.length
+  }
+
+  /** Permanently removes trash items deleted more than `maxAgeMs` before `now`. */
+  async purgeTrash(maxAgeMs: number, osTrash?: Remover, now = Date.now()): Promise<number> {
+    const items = await this.listTrash()
+    let purged = 0
+    for (const item of items) {
+      const deleted = Date.parse(item.deletedAt)
+      if (Number.isNaN(deleted) || now - deleted <= maxAgeMs) continue
+      await removeTrashDir(this.trashItemDir(item.id), item, osTrash)
+      purged++
+    }
+    return purged
+  }
+
+  /** First free vault-relative path for restoring `item` (original, then suffixed). */
+  private async freeRestoreTarget(item: TrashItem): Promise<string> {
+    const exists = async (rel: string): Promise<boolean> =>
+      stat(this.resolveSafe(rel)).then(
+        () => true,
+        () => false,
+      )
+    if (!(await exists(item.originalPath))) return item.originalPath
+
+    const slash = item.originalPath.lastIndexOf('/')
+    const dir = slash === -1 ? '' : item.originalPath.slice(0, slash + 1)
+    const [stem, ext] = item.kind === 'note' ? splitNoteExt(item.name) : [item.name, '']
+    for (let n = 1; n < 1000; n++) {
+      const suffix = n === 1 ? ' (restored)' : ` (restored ${n})`
+      const candidate = `${dir}${stem}${suffix}${ext}`
+      if (!(await exists(candidate))) return candidate
+    }
+    throw new Error('restore-target-exhausted')
+  }
+
   /**
    * Resolves a vault-relative path to an absolute path and asserts it stays
    * inside the vault root. Rejects `../` traversal and absolute paths that
@@ -323,6 +509,104 @@ export class VaultService {
     }
     return abs
   }
+}
+
+/** Characters Windows forbids in a file/folder name (`\` too: segments are '/'-separated). */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: control chars are invalid in names
+const INVALID_NAME_CHARS = /[<>:"|?*\\\u0000-\u001f]/
+/** Windows reserved device names (with or without an extension). */
+const RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
+
+/**
+ * Rejects (`invalid-name`) a vault-relative path any of whose segments is not a
+ * portable file name: Windows-forbidden characters (a `:` would otherwise create
+ * an NTFS alternate data stream — a note that silently vanishes), reserved
+ * device names, a trailing dot/space, or an empty segment.
+ */
+export function assertValidName(relPath: string): void {
+  for (const seg of relPath.split('/')) {
+    if (
+      seg === '' ||
+      seg === '.' ||
+      seg === '..' ||
+      INVALID_NAME_CHARS.test(seg) ||
+      RESERVED_NAME.test(seg) ||
+      /[. ]$/.test(seg)
+    ) {
+      throw new Error('invalid-name')
+    }
+  }
+}
+
+/** Errors Windows reports while another process (antivirus, search indexer) briefly holds a file. */
+const TRANSIENT_FS_ERRORS = new Set(['EPERM', 'EACCES', 'EBUSY'])
+
+/** Back-off (ms) between attempts of {@link replaceWithTemp}: ~2.5 s in total. */
+const REPLACE_RETRY_DELAYS_MS = [20, 40, 80, 160, 250, 400, 600, 900]
+
+type RenameDeps = { rename: typeof rename; sleep: (ms: number) => Promise<void> }
+const defaultRenameDeps: RenameDeps = {
+  rename,
+  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+}
+
+/**
+ * `rename` that rides out Windows' transient sharing locks. Right after a file
+ * is created, written or renamed, Defender / the search indexer briefly open it
+ * and `MoveFileEx` fails with EPERM/EACCES/EBUSY (a save right after a rename
+ * failed ~1 in 4 times in E2E). Those are retried with back-off; any other
+ * error, or a lock that outlasts the retries, is thrown.
+ */
+export async function renameRetrying(
+  from: string,
+  to: string,
+  deps: RenameDeps = defaultRenameDeps,
+): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await deps.rename(from, to)
+      return
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? ''
+      if (!TRANSIENT_FS_ERRORS.has(code) || attempt >= REPLACE_RETRY_DELAYS_MS.length) throw err
+      await deps.sleep(REPLACE_RETRY_DELAYS_MS[attempt])
+    }
+  }
+}
+
+/**
+ * Renames a fully written temp file over `dest` (the atomic-write commit),
+ * retrying transient locks; on failure the temp file is removed.
+ */
+export async function replaceWithTemp(
+  tmp: string,
+  dest: string,
+  deps: RenameDeps = defaultRenameDeps,
+): Promise<void> {
+  try {
+    await renameRetrying(tmp, dest, deps)
+  } catch (err) {
+    await unlink(tmp).catch(() => undefined)
+    throw err
+  }
+}
+
+/**
+ * True when something other than `fromAbs` itself lives at `toAbs`. On a
+ * case-insensitive file system a case-only rename's target resolves to the
+ * source; comparing file identity (dev + inode) lets that rename through.
+ */
+async function occupiedByOther(fromAbs: string, toAbs: string): Promise<boolean> {
+  let target: BigIntStats
+  try {
+    target = await stat(toAbs, { bigint: true })
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw err
+  }
+  if (fromAbs.toLowerCase() !== toAbs.toLowerCase()) return true
+  const source = await stat(fromAbs, { bigint: true })
+  return source.ino !== target.ino || source.dev !== target.dev
 }
 
 function hasNoteExtension(name: string): boolean {
@@ -340,6 +624,73 @@ function isLockedNoteName(name: string): boolean {
 /** Whether the file is listable as a note: a plaintext note or a locked note. */
 function isNoteFile(name: string): boolean {
   return hasNoteExtension(name) || isLockedNoteName(name)
+}
+
+/** Removes an absolute path: permanently, or into the OS recycle bin (injected). */
+export type Remover = (absPath: string) => Promise<void>
+
+const rmRf: Remover = (absPath) => rm(absPath, { recursive: true, force: true })
+
+/** Removes a trash item dir: `rm -rf` for a copy, the OS trash for an only copy. */
+async function removeTrashDir(
+  dir: string,
+  item: TrashItem | null,
+  osTrash: Remover | undefined,
+): Promise<void> {
+  if (item?.osTrashed === true || osTrash === undefined) return rmRf(dir)
+  try {
+    await osTrash(dir)
+  } catch (err) {
+    console.error('OS trash failed, deleting trash item instead:', err)
+    await rmRf(dir)
+  }
+}
+
+/** In-vault trash directory name. Dot-prefixed, so every vault walker skips it. */
+export const TRASH_DIR = '.trash'
+
+/** Trash item ids are generated as `<ms>-<hex>`; anything else is rejected (no traversal). */
+const TRASH_ID_RE = /^\d+-[0-9a-f]+$/
+
+function normalizeRel(relPath: string): string {
+  return relPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+}
+
+function isTrashPath(rel: string): boolean {
+  return rel === TRASH_DIR || rel.startsWith(`${TRASH_DIR}/`)
+}
+
+/** Splits a note filename into stem + extension, keeping `.md.enc` together. */
+function splitNoteExt(name: string): [string, string] {
+  const m = /(\.[^./]+(?:\.enc)?)$/i.exec(name)
+  if (m === null || m.index === 0) return [name, '']
+  return [name.slice(0, m.index), m[1]]
+}
+
+async function writeMeta(itemDir: string, item: TrashItem): Promise<void> {
+  await writeFile(join(itemDir, 'meta.json'), JSON.stringify(item, null, 2), 'utf-8')
+}
+
+async function readMeta(itemDir: string): Promise<TrashItem | null> {
+  try {
+    const raw = JSON.parse(await readFile(join(itemDir, 'meta.json'), 'utf-8')) as TrashItem
+    if (
+      typeof raw.id !== 'string' ||
+      (raw.kind !== 'note' && raw.kind !== 'folder') ||
+      typeof raw.name !== 'string' ||
+      typeof raw.originalPath !== 'string' ||
+      typeof raw.deletedAt !== 'string' ||
+      raw.name.includes('/') ||
+      raw.name.includes('\\') ||
+      raw.name === '..' ||
+      raw.name === '.'
+    ) {
+      return null
+    }
+    return raw
+  } catch {
+    return null
+  }
 }
 
 /** A locked note's display title: strip `.enc` and the note extension. `a/b.md.enc` -> `b`. */

@@ -1,0 +1,55 @@
+import type { common as en } from '../en/common'
+import type { Shape } from '../translate'
+
+export const common: Shape<typeof en> = {
+  appName: 'Slate',
+  cancel: 'İptal',
+  save: 'Kaydet',
+  delete: 'Sil',
+  remove: 'Kaldır',
+  close: 'Kapat',
+  ok: 'Tamam',
+  rename: 'Yeniden adlandır',
+  restore: 'Geri yükle',
+  open: 'Aç',
+  create: 'Oluştur',
+  undo: 'Geri al',
+  retry: 'Tekrar dene',
+  done: 'Bitti',
+  back: 'Geri',
+  next: 'İleri',
+  continue: 'Devam',
+  untitled: 'Adsız',
+  loading: 'Yükleniyor…',
+  note: 'Not',
+  folder: 'Klasör',
+  notesCount: { one: '{count} not', other: '{count} not' },
+  itemsCount: { one: '{count} öğe', other: '{count} öğe' },
+  osTrash: {
+    win: {
+      name: 'Geri Dönüşüm Kutusu',
+      to: "Geri Dönüşüm Kutusu'na",
+      in: "Geri Dönüşüm Kutusu'nda",
+    },
+    mac: { name: 'Çöp Sepeti', to: "Çöp Sepeti'ne", in: "Çöp Sepeti'nde" },
+    linux: {
+      name: 'sistem çöp kutusu',
+      to: 'sistem çöp kutusuna',
+      in: 'sistem çöp kutusunda',
+    },
+  },
+  time: {
+    justNow: 'az önce',
+    minutesAgo: { one: '{count} dk önce', other: '{count} dk önce' },
+    hoursAgo: { one: '{count} sa önce', other: '{count} sa önce' },
+    daysAgo: { one: '{count} gün önce', other: '{count} gün önce' },
+    today: 'Bugün',
+    yesterday: 'Dün',
+    tomorrow: 'Yarın',
+  },
+  language: {
+    label: 'Language / Dil',
+    en: 'English',
+    tr: 'Türkçe',
+  },
+}

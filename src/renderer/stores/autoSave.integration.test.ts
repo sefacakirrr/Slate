@@ -21,8 +21,12 @@ const rootRef = vi.hoisted(() => ({ current: '' }))
 const inflight = vi.hoisted(() => ({ writes: [] as Promise<unknown>[] }))
 
 async function flushWrites(): Promise<void> {
-  await Promise.all(inflight.writes)
-  inflight.writes.length = 0
+  // A save first re-reads the file (disk-change check), then writes: drain
+  // tracked IO in rounds, letting each continuation queue the next step.
+  for (let round = 0; round < 10; round++) {
+    await Promise.all(inflight.writes.splice(0))
+    for (let tick = 0; tick < 10; tick++) await Promise.resolve()
+  }
 }
 
 vi.mock('@renderer/api', async () => {
@@ -33,12 +37,13 @@ vi.mock('@renderer/api', async () => {
   return {
     api: {
       vault: {
-        readNote: async (path: string) => {
-          try {
-            return ok(await read(joinPath(rootRef.current, path), 'utf-8'))
-          } catch (err) {
-            return fail(String(err))
-          }
+        readNote: (path: string) => {
+          const p = read(joinPath(rootRef.current, path), 'utf-8').then(
+            (data) => ok(data),
+            (err) => fail(String(err)),
+          )
+          inflight.writes.push(p)
+          return p
         },
         writeNote: (req: { path: string; content: string }) => {
           const p = write(joinPath(rootRef.current, req.path), req.content, 'utf-8').then(

@@ -1,11 +1,14 @@
+import { useT } from '@renderer/i18n'
+import { useDiskSyncStore } from '@renderer/stores/diskSyncStore'
+import { baseName, isExternalTabPath } from '@renderer/stores/externalPath'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
-import { X } from 'lucide-react'
+import { ExternalLink, FileX, Lock, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const NOTE_EXTENSIONS = ['.md', '.markdown', '.txt']
 
 function tabLabel(path: string): string {
-  let name = path.split('/').pop() ?? path
+  let name = baseName(path)
   if (name.endsWith('.enc')) name = name.slice(0, -'.enc'.length)
   const lower = name.toLowerCase()
   const ext = NOTE_EXTENSIONS.find((e) => lower.endsWith(e))
@@ -15,6 +18,7 @@ function tabLabel(path: string): string {
 type MenuPos = { x: number; y: number; path: string } | null
 
 export function TabBar() {
+  const t = useT()
   const tabs = useWorkspaceStore((s) => s.tabs)
   const activeTabPath = useWorkspaceStore((s) => s.activeTabPath)
   const activateTab = useWorkspaceStore((s) => s.activateTab)
@@ -24,6 +28,7 @@ export function TabBar() {
   const closeTabsToRight = useWorkspaceStore((s) => s.closeTabsToRight)
   const closeAllTabs = useWorkspaceStore((s) => s.closeAllTabs)
   const reorderTab = useWorkspaceStore((s) => s.reorderTab)
+  const missing = useDiskSyncStore((s) => s.missing)
 
   const [menu, setMenu] = useState<MenuPos>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -84,7 +89,7 @@ export function TabBar() {
 
   if (tabs.length === 0) return null
 
-  const menuTabIdx = menu ? tabs.findIndex((t) => t.path === menu.path) : -1
+  const menuTabIdx = menu ? tabs.findIndex((tb) => tb.path === menu.path) : -1
   const hasTabsToLeft = menuTabIdx > 0
   const hasTabsToRight = menuTabIdx >= 0 && menuTabIdx < tabs.length - 1
 
@@ -95,6 +100,8 @@ export function TabBar() {
         const active = tab.path === activeTabPath
         const isDragging = dragIdx === idx
         const isDragOver = dragOverIdx === idx && dragIdx !== idx
+        const external = isExternalTabPath(tab.path)
+        const gone = missing.includes(tab.path)
         return (
           <div
             key={tab.path}
@@ -116,21 +123,45 @@ export function TabBar() {
               type="button"
               onClick={() => activateTab(tab.path)}
               className="flex min-w-0 flex-1 items-center gap-1.5"
-              title={tab.path}
+              title={gone ? t('sidebar.tabs.deletedOnDiskTitle', { path: tab.path }) : tab.path}
             >
               {tab.dirty && (
-                <span className="size-1.5 shrink-0 rounded-full bg-amber-400" aria-hidden="true" />
+                <span
+                  className="size-1.5 shrink-0 rounded-full bg-amber-400"
+                  role="img"
+                  aria-label={t('sidebar.tabs.unsavedChanges')}
+                />
               )}
-              <span className="truncate">{name}</span>
+              {tab.locked && (
+                <Lock
+                  className="size-3 shrink-0 text-amber-500/80 light:text-amber-600"
+                  role="img"
+                  aria-label={t('sidebar.tabs.locked')}
+                />
+              )}
+              {external && (
+                <ExternalLink
+                  className="size-3 shrink-0 text-slate-500 light:text-slate-400"
+                  aria-label={t('sidebar.tabs.externalFile')}
+                />
+              )}
+              {gone && (
+                <FileX
+                  className="size-3 shrink-0 text-red-400"
+                  role="img"
+                  aria-label={t('sidebar.tabs.deletedOnDisk')}
+                />
+              )}
+              <span className={`truncate ${gone ? 'line-through' : ''}`}>{name}</span>
             </button>
             <button
               type="button"
               onClick={() => closeTab(tab.path)}
-              title="Close tab"
+              title={t('sidebar.tabs.closeTab')}
               className="shrink-0 rounded p-0.5 text-slate-500 transition hover:bg-slate-700 hover:text-slate-200 light:hover:bg-slate-100 light:hover:text-slate-600"
             >
               <X className="size-3" aria-hidden="true" />
-              <span className="sr-only">Close {name}</span>
+              <span className="sr-only">{t('sidebar.tabs.closeLabel', { name })}</span>
             </button>
           </div>
         )
@@ -143,28 +174,43 @@ export function TabBar() {
           style={{ left: menu.x, top: menu.y }}
         >
           <ContextMenuItem
-            label="Close"
-            onClick={() => { closeTab(menu.path); setMenu(null) }}
+            label={t('sidebar.tabs.close')}
+            onClick={() => {
+              closeTab(menu.path)
+              setMenu(null)
+            }}
           />
           <ContextMenuItem
-            label="Close Others"
-            onClick={() => { closeOtherTabs(menu.path); setMenu(null) }}
+            label={t('sidebar.tabs.closeOthers')}
+            onClick={() => {
+              closeOtherTabs(menu.path)
+              setMenu(null)
+            }}
             disabled={tabs.length <= 1}
           />
           <ContextMenuItem
-            label="Close to the Left"
-            onClick={() => { closeTabsToLeft(menu.path); setMenu(null) }}
+            label={t('sidebar.tabs.closeLeft')}
+            onClick={() => {
+              closeTabsToLeft(menu.path)
+              setMenu(null)
+            }}
             disabled={!hasTabsToLeft}
           />
           <ContextMenuItem
-            label="Close to the Right"
-            onClick={() => { closeTabsToRight(menu.path); setMenu(null) }}
+            label={t('sidebar.tabs.closeRight')}
+            onClick={() => {
+              closeTabsToRight(menu.path)
+              setMenu(null)
+            }}
             disabled={!hasTabsToRight}
           />
           <div className="my-1 border-t border-slate-700 light:border-slate-200" />
           <ContextMenuItem
-            label="Close All"
-            onClick={() => { closeAllTabs(); setMenu(null) }}
+            label={t('sidebar.tabs.closeAll')}
+            onClick={() => {
+              closeAllTabs()
+              setMenu(null)
+            }}
           />
         </div>
       )}
@@ -172,7 +218,15 @@ export function TabBar() {
   )
 }
 
-function ContextMenuItem({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) {
+function ContextMenuItem({
+  label,
+  onClick,
+  disabled,
+}: {
+  label: string
+  onClick: () => void
+  disabled?: boolean
+}) {
   return (
     <button
       type="button"

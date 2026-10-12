@@ -1,11 +1,14 @@
+import { useT } from '@renderer/i18n'
 import { useCalendarStore } from '@renderer/stores/calendarStore'
-import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
+import { useEncryptionStore } from '@renderer/stores/encryptionStore'
 import { Bell, X } from 'lucide-react'
 import { useEffect } from 'react'
 
 export function ReminderToast() {
   const { lastFired, dismissFired } = useCalendarStore()
-  const openTab = useWorkspaceStore((s) => s.openTab)
+  const t = useT()
+  // openNote routes locked notes through the vault password prompt.
+  const openNote = useEncryptionStore((s) => s.openNote)
 
   useEffect(() => {
     if (!lastFired) return
@@ -17,7 +20,7 @@ export function ReminderToast() {
 
   function handleClick() {
     if (lastFired?.notePath) {
-      openTab(lastFired.notePath)
+      void openNote(lastFired.notePath)
     }
     dismissFired()
   }
@@ -34,20 +37,19 @@ export function ReminderToast() {
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold text-slate-100 light:text-slate-900">
-            Hatırlatıcı
+            {t('calendar.toast.heading')}
           </p>
           <p className="mt-0.5 truncate text-xs text-slate-400 light:text-slate-600">
             {lastFired.title}
           </p>
           {lastFired.notePath && (
-            <p className="mt-1 truncate text-[10px] text-accent-400">
-              {lastFired.notePath}
-            </p>
+            <p className="mt-1 truncate text-[10px] text-accent-400">{lastFired.notePath}</p>
           )}
         </div>
         <span
           role="button"
           tabIndex={0}
+          title={t('calendar.toast.dismiss')}
           onClick={(e) => {
             e.stopPropagation()
             dismissFired()

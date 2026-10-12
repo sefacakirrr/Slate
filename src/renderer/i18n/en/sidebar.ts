@@ -1,0 +1,111 @@
+/** sidebar strings (English source). */
+export const sidebar = {
+  header: {
+    label: 'Sidebar',
+    notes: 'Notes',
+    trash: 'Trash',
+    changeVault: 'Change vault folder',
+    newNote: 'New note',
+    newFolder: 'New folder',
+    listView: 'List view',
+    treeView: 'Tree view',
+    calendar: 'Calendar',
+    refresh: 'Refresh',
+    settings: 'Settings',
+  },
+  tree: {
+    renameFolder: 'Rename folder',
+    newNoteHere: 'New note here',
+    newSubfolder: 'New subfolder',
+    deleteFolder: 'Delete folder',
+    newFolderName: 'New folder name',
+    newNoteName: 'New note name',
+    folderNamePlaceholder: 'Folder name',
+    noteNamePlaceholder: 'Note name',
+    locked: 'Locked',
+    pinAsSticky: 'Pin as desktop sticky',
+    pinLabel: 'Pin {label} as sticky',
+    renameNote: 'Rename note',
+    renameLabel: 'Rename {label}',
+    unlockNote: 'Unlock note (decrypt back to plain markdown)',
+    unlockLabel: 'Unlock {label}',
+    lockNote: 'Lock note (encrypt with the vault password)',
+    lockLabel: 'Lock {label}',
+    deleteNote: 'Delete note',
+    deleteLabel: 'Delete {label}',
+    emptyVault: 'This vault has no notes yet.',
+    createFirstNote: 'Create your first note',
+    dropToRoot: 'drop to root',
+  },
+  tags: {
+    title: 'Tags',
+    showAll: 'Show all ({count} more)',
+  },
+  footer: {
+    createdBy: 'Created by Sefa Çakır',
+  },
+  confirm: {
+    deleteNoteTitle: 'Delete note',
+    deleteNoteMessage:
+      'Delete "{name}"? It will be moved {osTrashTo}; you can also restore it from Slate\'s Trash.',
+    deleteFolderTitle: 'Delete folder',
+    deleteFolderMessage:
+      'Delete "{name}" and all its contents? It will be moved {osTrashTo}; you can also restore it from Slate\'s Trash.',
+  },
+  notices: {
+    saveBeforeDeleteNote: 'Couldn\'t save the unsaved changes to "{path}", so it was not deleted.',
+    saveBeforeDeleteFolder:
+      'Couldn\'t save unsaved changes inside "{path}", so it was not deleted.',
+    moveFailed: 'Couldn\'t move "{name}": {error}',
+  },
+  notesList: {
+    empty: 'No notes yet.',
+    locked: 'Locked',
+  },
+  tabs: {
+    deletedOnDiskTitle: '{path} (deleted on disk — saving recreates it)',
+    unsavedChanges: 'Unsaved changes',
+    locked: 'Locked',
+    externalFile: 'External file',
+    deletedOnDisk: 'Deleted on disk',
+    closeTab: 'Close tab',
+    closeLabel: 'Close {name}',
+    close: 'Close',
+    closeOthers: 'Close Others',
+    closeLeft: 'Close to the Left',
+    closeRight: 'Close to the Right',
+    closeAll: 'Close All',
+  },
+  trash: {
+    info: 'Deleted items also go {osTrashTo}. Copies here are removed after 30 days.',
+    emptyTrash: 'Empty trash',
+    empty: 'Trash is empty. Deleted notes and folders show up here.',
+    vaultRoot: 'Vault root',
+    /** Deleted exactly one day ago (lower case: follows "folder · "). */
+    yesterday: 'yesterday',
+    restore: 'Restore',
+    deletePermanently: 'Delete permanently',
+    confirmItemOsTrashed:
+      'Remove "{name}" from Slate\'s Trash? It can no longer be restored from Slate; the copy {osTrashIn} is kept.',
+    confirmItem:
+      'Remove "{name}" from Slate\'s Trash? It is sent {osTrashTo} and can no longer be restored from Slate.',
+    confirmEmpty:
+      "Remove all {count} item(s) from Slate's Trash? They can no longer be restored from Slate; deleted notes stay {osTrashIn}.",
+    delete: 'Delete',
+  },
+  trashToast: {
+    movedToOsTrash: 'Moved "{name}" {osTrashTo}',
+    movedToTrash: 'Moved "{name}" to Trash',
+    deleteFailed: 'Couldn\'t delete "{name}" ({error}). Nothing was deleted.',
+    undo: 'Undo',
+    dismiss: 'Dismiss',
+  },
+  search: {
+    close: 'Close search',
+    label: 'Search notes',
+    placeholder: 'Search notes…',
+    hint: 'Type to search across every note in your vault.',
+    searching: 'Searching…',
+    noResults: 'No results.',
+  },
+}

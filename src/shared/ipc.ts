@@ -11,13 +11,16 @@ import type {
   ImportProgressInfo,
   ImportResultInfo,
   ImportScanInfo,
+  Language,
   NoteListItem,
+  OpenFileRequest,
   ReminderFiredPayload,
   ReminderRecord,
   ReminderRecurrence,
   SearchResult,
   TagInfo,
   ThemeMode,
+  TrashItem,
   UpdateState,
 } from './types'
 
@@ -46,6 +49,14 @@ export type IpcCommands = {
   'settings:setNoteOrder': { request: { folder: string; names: string[] }; response: undefined }
   'settings:getFontSize': { request: undefined; response: number }
   'settings:setFontSize': { request: number; response: undefined }
+  'settings:getLaunchAtLogin': { request: undefined; response: boolean }
+  /** Persists and immediately applies the OS login item (packaged builds only). */
+  'settings:setLaunchAtLogin': { request: boolean; response: undefined }
+  'settings:getCloseToTray': { request: undefined; response: boolean }
+  'settings:setCloseToTray': { request: boolean; response: undefined }
+  /** UI language; first run follows the OS locale. A change broadcasts `language:changed`. */
+  'settings:getLanguage': { request: undefined; response: Language }
+  'settings:setLanguage': { request: Language; response: undefined }
   'dialog:pickFolder': { request: undefined; response: string | null }
   'vault:listNotes': { request: undefined; response: string[] }
   'vault:listDirs': { request: undefined; response: string[] }
@@ -56,8 +67,18 @@ export type IpcCommands = {
     response: undefined
   }
   'vault:createNote': { request: string; response: undefined }
-  'vault:deleteNote': { request: string; response: undefined }
-  'vault:deleteFolder': { request: string; response: undefined }
+  /** Moves a note into the in-vault trash; returns the trash record (for undo). */
+  'vault:deleteNote': { request: string; response: TrashItem }
+  /** Moves a folder (and everything in it) into the in-vault trash. */
+  'vault:deleteFolder': { request: string; response: TrashItem }
+  /** Trash items, newest first. */
+  'vault:listTrash': { request: undefined; response: TrashItem[] }
+  /** Restores a trash item by id; returns the (possibly suffixed) restored path. */
+  'vault:restoreTrash': { request: string; response: { path: string } }
+  /** Permanently deletes one trash item (OS recycle bin, else rm -rf). */
+  'vault:deleteTrashItem': { request: string; response: undefined }
+  /** Permanently deletes every trash item. */
+  'vault:emptyTrash': { request: undefined; response: undefined }
   'vault:createFolder': { request: string; response: undefined }
   'vault:renameNote': { request: { from: string; to: string }; response: undefined }
   'vault:renameFolder': { request: { from: string; to: string }; response: undefined }
@@ -109,6 +130,11 @@ export type IpcCommands = {
   }
   /** Open (or focus) a sticky-note window for a note path (Epic 11). */
   'window:sticky:open': { request: string; response: undefined }
+  /**
+   * A sticky's answer to main's `sticky:flushRequest` (before its note is
+   * locked): its unsaved draft, or null when clean. The sticky stops saving.
+   */
+  'window:sticky:flushed': { request: { id: number; draft: string | null }; response: undefined }
   /** Close a sticky-note window by note path (unpins it). */
   'window:sticky:close': { request: string; response: undefined }
   'window:minimize': { request: undefined; response: undefined }
@@ -116,6 +142,7 @@ export type IpcCommands = {
   'window:toggleMaximize': { request: undefined; response: boolean }
   'window:close': { request: undefined; response: undefined }
   'window:forceClose': { request: undefined; response: undefined }
+  'window:cancelQuit': { request: undefined; response: undefined }
   'window:isMaximized': { request: undefined; response: boolean }
   /** Trigger an update check (Epic 12); outcomes arrive via the `update:state` event. */
   'update:check': { request: undefined; response: undefined }
@@ -147,10 +174,24 @@ export type IpcCommands = {
   }
   /** Delete a reminder by id. */
   'reminder:remove': { request: string; response: undefined }
+  /** Fired events buffered before the main renderer subscribed (drained by preload onFired). */
+  'reminder:takePending': { request: undefined; response: ReminderFiredPayload[] }
   /** List daily note paths for a given month (YYYY-MM). */
   'dailynotes:list': { request: string; response: string[] }
   /** Create or get the daily note for a date (YYYY-MM-DD). Returns the vault-relative path. */
   'dailynotes:open': { request: string; response: string }
+  /** Read an allowlisted external (outside-vault) file by absolute path. */
+  'external:read': { request: string; response: string }
+  /** Write an allowlisted external file in place (BOM + line endings preserved). */
+  'external:write': { request: { path: string; content: string }; response: undefined }
+  /**
+   * Resolve dropped files into tab requests and allowlist the external ones.
+   * Only reachable through preload's `external.openDropped(File[])`, which
+   * derives the paths itself — the renderer can't name arbitrary paths.
+   */
+  'external:resolveDropped': { request: string[]; response: OpenFileRequest[] }
+  /** Drain open requests from argv / second-instance / open-file. */
+  'external:takePending': { request: undefined; response: OpenFileRequest[] }
 }
 
 export type IpcChannel = keyof IpcCommands
@@ -180,6 +221,14 @@ export type Api = {
     setNoteOrder: (req: { folder: string; names: string[] }) => Promise<IpcResult<undefined>>
     getFontSize: () => Promise<IpcResult<number>>
     setFontSize: (size: number) => Promise<IpcResult<undefined>>
+    getLaunchAtLogin: () => Promise<IpcResult<boolean>>
+    setLaunchAtLogin: (enabled: boolean) => Promise<IpcResult<undefined>>
+    getCloseToTray: () => Promise<IpcResult<boolean>>
+    setCloseToTray: (enabled: boolean) => Promise<IpcResult<undefined>>
+    getLanguage: () => Promise<IpcResult<Language>>
+    setLanguage: (language: Language) => Promise<IpcResult<undefined>>
+    /** The language was switched (from any window). Returns an unsubscribe function. */
+    onLanguageChanged: (cb: (language: Language) => void) => () => void
   }
   dialog: {
     pickFolder: () => Promise<IpcResult<string | null>>
@@ -191,8 +240,12 @@ export type Api = {
     readNote: (path: string) => Promise<IpcResult<string>>
     writeNote: (req: { path: string; content: string }) => Promise<IpcResult<undefined>>
     createNote: (path: string) => Promise<IpcResult<undefined>>
-    deleteNote: (path: string) => Promise<IpcResult<undefined>>
-    deleteFolder: (path: string) => Promise<IpcResult<undefined>>
+    deleteNote: (path: string) => Promise<IpcResult<TrashItem>>
+    deleteFolder: (path: string) => Promise<IpcResult<TrashItem>>
+    listTrash: () => Promise<IpcResult<TrashItem[]>>
+    restoreTrash: (id: string) => Promise<IpcResult<{ path: string }>>
+    deleteTrashItem: (id: string) => Promise<IpcResult<undefined>>
+    emptyTrash: () => Promise<IpcResult<undefined>>
     createFolder: (path: string) => Promise<IpcResult<undefined>>
     renameNote: (req: { from: string; to: string }) => Promise<IpcResult<undefined>>
     renameFolder: (req: { from: string; to: string }) => Promise<IpcResult<undefined>>
@@ -230,6 +283,7 @@ export type Api = {
     toggleMaximize: () => Promise<IpcResult<boolean>>
     close: () => Promise<IpcResult<undefined>>
     forceClose: () => Promise<IpcResult<undefined>>
+    cancelQuit: () => Promise<IpcResult<undefined>>
     isMaximized: () => Promise<IpcResult<boolean>>
     /**
      * Subscribes to maximize/restore changes (including OS-driven ones like
@@ -245,6 +299,16 @@ export type Api = {
     sticky: {
       open: (path: string) => Promise<IpcResult<undefined>>
       close: (path: string) => Promise<IpcResult<undefined>>
+      /**
+       * This sticky's note was renamed/moved (or a containing folder was); payload
+       * is the new vault-relative path. Sent before `vault:filesChanged`.
+       */
+      onPathChanged: (cb: (path: string) => void) => () => void
+      /**
+       * Main is about to lock this sticky's note: `cb` must stop all saving and
+       * return its unsaved draft (null when clean); the window is then closed.
+       */
+      onFlushRequest: (cb: () => string | null) => () => void
     }
   }
   /** In-app updates (Epic 12). */
@@ -283,5 +347,17 @@ export type Api = {
   dailynotes: {
     list: (month: string) => Promise<IpcResult<string[]>>
     open: (date: string) => Promise<IpcResult<string>>
+  }
+  /** Files opened from outside the vault (drag & drop, Open with, argv). */
+  external: {
+    read: (path: string) => Promise<IpcResult<string>>
+    write: (req: { path: string; content: string }) => Promise<IpcResult<undefined>>
+    /** Resolves dropped `File`s (paths read in preload via `webUtils`) into tab requests. */
+    openDropped: (files: File[]) => Promise<IpcResult<OpenFileRequest[]>>
+    /**
+     * Delivers OS-level open requests (argv, second instance, macOS open-file),
+     * including any queued before this subscription. Returns an unsubscribe function.
+     */
+    onOpenRequested: (cb: (requests: OpenFileRequest[]) => void) => () => void
   }
 }

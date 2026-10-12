@@ -1,8 +1,10 @@
 import { api } from '@renderer/api'
+import { useT } from '@renderer/i18n'
 import type { UpdateState } from '@shared/types'
 import { useEffect, useState } from 'react'
 
 export function UpdateBar() {
+  const t = useT()
   const [update, setUpdate] = useState<UpdateState | null>(null)
 
   useEffect(() => {
@@ -25,15 +27,13 @@ export function UpdateBar() {
   if (update.status === 'downloaded') {
     return (
       <div className="flex items-center justify-between bg-accent-500/10 px-3 py-1">
-        <span className="text-[11px] text-accent-400">
-          Update ready — restart to apply
-        </span>
+        <span className="text-[11px] text-accent-400">{t('settings.updateBar.ready')}</span>
         <button
           type="button"
           onClick={() => api.update.install()}
           className="rounded px-2 py-0.5 text-[11px] font-medium text-accent-400 transition hover:bg-accent-500/20"
         >
-          Restart Now
+          {t('settings.updateBar.restartNow')}
         </button>
       </div>
     )

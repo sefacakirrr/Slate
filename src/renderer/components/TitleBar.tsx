@@ -1,5 +1,6 @@
 import { api } from '@renderer/api'
 import { Logo } from '@renderer/components/Logo'
+import { useT } from '@renderer/i18n'
 import { Minus, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
@@ -31,6 +32,8 @@ function RestoreIcon() {
  */
 export function TitleBar() {
   const [maximized, setMaximized] = useState(false)
+  const t = useT()
+  const maximizeLabel = maximized ? t('app.titleBar.restore') : t('app.titleBar.maximize')
 
   useEffect(() => {
     api.window.isMaximized().then((r) => {
@@ -47,7 +50,7 @@ export function TitleBar() {
       <div className="flex items-center gap-2 [-webkit-app-region:no-drag]">
         <Logo className="size-5 shrink-0 rounded-[5px]" />
         <span className="text-sm font-semibold tracking-tight text-slate-100 light:text-slate-900">
-          Slate
+          {t('common.appName')}
         </span>
       </div>
 
@@ -56,29 +59,29 @@ export function TitleBar() {
           <button
             type="button"
             onClick={() => api.window.minimize()}
-            title="Minimize"
+            title={t('app.titleBar.minimize')}
             className="flex w-11 items-center justify-center text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 light:text-slate-500 light:hover:bg-slate-100 light:hover:text-slate-900"
           >
             <Minus className="size-4" aria-hidden="true" />
-            <span className="sr-only">Minimize</span>
+            <span className="sr-only">{t('app.titleBar.minimize')}</span>
           </button>
           <button
             type="button"
             onClick={() => api.window.toggleMaximize().then((r) => r.ok && setMaximized(r.data))}
-            title={maximized ? 'Restore' : 'Maximize'}
+            title={maximizeLabel}
             className="flex w-11 items-center justify-center text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 light:text-slate-500 light:hover:bg-slate-100 light:hover:text-slate-900"
           >
             {maximized ? <RestoreIcon /> : <MaximizeIcon />}
-            <span className="sr-only">{maximized ? 'Restore' : 'Maximize'}</span>
+            <span className="sr-only">{maximizeLabel}</span>
           </button>
           <button
             type="button"
             onClick={() => api.window.close()}
-            title="Close"
+            title={t('app.titleBar.close')}
             className="flex w-11 items-center justify-center text-slate-400 transition hover:bg-red-600 hover:text-white light:text-slate-500"
           >
             <X className="size-4" aria-hidden="true" />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{t('app.titleBar.close')}</span>
           </button>
         </div>
       )}

@@ -1,4 +1,5 @@
 import { EditorView } from '@codemirror/view'
+import { t } from '@renderer/i18n'
 
 export type ColorTheme = {
   id: string
@@ -20,7 +21,10 @@ export type ColorTheme = {
 export const BUILTIN_THEMES: ColorTheme[] = [
   {
     id: 'default-dark',
-    name: 'Default Dark',
+    // Getter: generic names follow the UI language at read time.
+    get name() {
+      return t('editor.themes.defaultDark')
+    },
     base: 'dark',
     colors: {
       bg: '#0a0e1a',
@@ -36,7 +40,9 @@ export const BUILTIN_THEMES: ColorTheme[] = [
   },
   {
     id: 'default-light',
-    name: 'Default Light',
+    get name() {
+      return t('editor.themes.defaultLight')
+    },
     base: 'light',
     colors: {
       bg: '#ffffff',

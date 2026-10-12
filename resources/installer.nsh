@@ -55,3 +55,48 @@
   Pop $0
   Sleep 1000
 !macroend
+
+; ── "Open with" registration for .md / .markdown / .txt ────────────────────
+; Adds Slate to the Open-with list WITHOUT taking over the default app (unlike
+; electron-builder's `fileAssociations`, whose APP_ASSOCIATE rewrites the
+; extension's default ProgID). Writes ProgIDs + OpenWithProgids + an
+; Applications entry under SHELL_CONTEXT (HKCU for this per-user install).
+; The app receives the file as argv[1] ("%1"); a running instance gets it via
+; second-instance.
+
+!macro slateRegisterProgId PROGID DESCRIPTION
+  WriteRegStr SHELL_CONTEXT "Software\Classes\${PROGID}" "" "${DESCRIPTION}"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\${PROGID}" "FriendlyTypeName" "${DESCRIPTION}"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\${PROGID}\DefaultIcon" "" "$INSTDIR\${APP_EXECUTABLE_FILENAME},0"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\${PROGID}\shell\open" "FriendlyAppName" "${PRODUCT_NAME}"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\${PROGID}\shell\open\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "%1"'
+!macroend
+
+!macro customInstall
+  !insertmacro slateRegisterProgId "Slate.Markdown" "Markdown document"
+  !insertmacro slateRegisterProgId "Slate.Text" "Text document"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\.md\OpenWithProgids" "Slate.Markdown" ""
+  WriteRegStr SHELL_CONTEXT "Software\Classes\.markdown\OpenWithProgids" "Slate.Markdown" ""
+  WriteRegStr SHELL_CONTEXT "Software\Classes\.txt\OpenWithProgids" "Slate.Text" ""
+
+  ; Applications\<exe>: name + supported types for the "Choose another app" list.
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}" "FriendlyAppName" "${PRODUCT_NAME}"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\DefaultIcon" "" "$INSTDIR\${APP_EXECUTABLE_FILENAME},0"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\shell\open\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "%1"'
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\SupportedTypes" ".md" ""
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\SupportedTypes" ".markdown" ""
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\SupportedTypes" ".txt" ""
+
+  ; SHCNE_ASSOCCHANGED: refresh Explorer's association cache.
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+!macroend
+
+!macro customUnInstall
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.md\OpenWithProgids" "Slate.Markdown"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.markdown\OpenWithProgids" "Slate.Markdown"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.txt\OpenWithProgids" "Slate.Text"
+  DeleteRegKey SHELL_CONTEXT "Software\Classes\Slate.Markdown"
+  DeleteRegKey SHELL_CONTEXT "Software\Classes\Slate.Text"
+  DeleteRegKey SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}"
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+!macroend

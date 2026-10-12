@@ -9,6 +9,8 @@
     "ignoreUnknown": true,
     "includes": [
       "src/**/*",
+      "e2e/**/*",
+      "!!**/e2e/.results",
       "*.ts",
       "*.tsx",
       "*.json",

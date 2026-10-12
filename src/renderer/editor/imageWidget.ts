@@ -8,6 +8,8 @@ import {
   WidgetType,
 } from '@codemirror/view'
 import { api } from '@renderer/api'
+import { t } from '@renderer/i18n'
+import { findFencedCode } from './highlight'
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'])
 
@@ -224,7 +226,9 @@ class ImageWidget extends WidgetType {
       placeholder.style.color = '#94a3b8'
       placeholder.style.fontSize = '12px'
       placeholder.style.border = '1px dashed #475569'
-      placeholder.textContent = `Image not found: ${this.alt || 'attachment'}`
+      placeholder.textContent = t('editor.image.notFound', {
+        name: this.alt || t('editor.image.fallbackName'),
+      })
       frame.appendChild(placeholder)
     }
 
@@ -264,9 +268,7 @@ class ImageWidget extends WidgetType {
     frame.addEventListener('mouseenter', () => {
       frame.style.outline = '1px solid #8b5cf680'
       frame.style.outlineOffset = '1px'
-      for (const el of frame.querySelectorAll<HTMLElement>(
-        '.cm-widget-delete, .cm-image-resize',
-      )) {
+      for (const el of frame.querySelectorAll<HTMLElement>('.cm-widget-delete, .cm-image-resize')) {
         el.style.opacity = '1'
       }
     })
@@ -276,9 +278,7 @@ class ImageWidget extends WidgetType {
       if (frame.hasAttribute('data-dragging')) return
       frame.style.outline = ''
       frame.style.outlineOffset = ''
-      for (const el of frame.querySelectorAll<HTMLElement>(
-        '.cm-widget-delete, .cm-image-resize',
-      )) {
+      for (const el of frame.querySelectorAll<HTMLElement>('.cm-widget-delete, .cm-image-resize')) {
         el.style.opacity = '0'
       }
     })
@@ -319,7 +319,7 @@ function createResizeHandle(
 ): HTMLElement {
   const handle = document.createElement('span')
   handle.className = 'cm-image-resize'
-  handle.title = 'Drag to resize — double-click image to reset'
+  handle.title = t('editor.image.resizeHandle')
   handle.style.position = 'absolute'
   handle.style.right = '-7px'
   handle.style.bottom = '-7px'
@@ -473,7 +473,7 @@ class FileWidget extends WidgetType {
 
     // Open hint
     const openHint = document.createElement('span')
-    openHint.textContent = 'Open'
+    openHint.textContent = t('common.open')
     openHint.style.fontSize = '10px'
     openHint.style.color = '#64748b'
     openHint.style.marginLeft = 'auto'
@@ -510,7 +510,7 @@ class FileWidget extends WidgetType {
       spinner.style.animation = 'cm-spin 0.6s linear infinite'
       openHint.appendChild(spinner)
       api.attachment.open(filePath).then(() => {
-        openHint.textContent = 'Open'
+        openHint.textContent = t('common.open')
       })
     })
 
@@ -532,8 +532,11 @@ class FileWidget extends WidgetType {
     return wrapper
   }
 
-  ignoreEvent(event: Event): boolean {
-    return event.type !== 'mousedown' && event.type !== 'click'
+  ignoreEvent(): boolean {
+    // The chip handles its own clicks. Letting CodeMirror process the
+    // mousedown re-renders the line, replacing the chip's DOM between
+    // mousedown and mouseup, so `click` never fired and Open did nothing.
+    return true
   }
 }
 
@@ -541,7 +544,7 @@ function createDeleteButton(view: EditorView, from: number, to: number): HTMLBut
   const btn = document.createElement('button')
   btn.type = 'button'
   btn.className = 'cm-widget-delete'
-  btn.title = 'Remove'
+  btn.title = t('common.remove')
   btn.innerHTML = '✕'
   btn.style.position = 'absolute'
   btn.style.top = '8px'
@@ -565,10 +568,14 @@ function createDeleteButton(view: EditorView, from: number, to: number): HTMLBut
     e.preventDefault()
     e.stopPropagation()
     const docLen = view.state.doc.length
-    const deleteEnd = to < docLen && view.state.doc.sliceString(to, to + 1) === '\n' ? to + 1 : to
+    if (to > docLen) return
+    // Remove the line with ONE line break: the following one, or (on the last
+    // line) the preceding one. Removing both merged the neighbouring lines.
+    const hasNext = to < docLen && view.state.doc.sliceString(to, to + 1) === '\n'
+    const deleteEnd = hasNext ? to + 1 : to
     const deleteStart =
-      from > 0 && view.state.doc.sliceString(from - 1, from) === '\n' ? from - 1 : from
-    view.dispatch({ changes: { from: deleteStart, to: deleteEnd } })
+      !hasNext && from > 0 && view.state.doc.sliceString(from - 1, from) === '\n' ? from - 1 : from
+    view.dispatch({ changes: { from: deleteStart, to: deleteEnd }, userEvent: 'delete.widget' })
   })
 
   return btn
@@ -643,14 +650,16 @@ function isImageLine(state: EditorState, pos: number) {
   const lineText = state.doc.sliceString(line.from, line.to)
   const trimmed = lineText.trim()
   if (!trimmed) return null
-  if (IMAGE_RE.test(trimmed) || HTML_IMG_RE.test(trimmed)) {
-    IMAGE_RE.lastIndex = 0
-    HTML_IMG_RE.lastIndex = 0
-    return line
-  }
-  IMAGE_RE.lastIndex = 0
-  HTML_IMG_RE.lastIndex = 0
-  return null
+  // Only a line the image widget replaces: the whole line is one image link
+  // (not text with an inline link) and it isn't inside a code block.
+  const whole = findAttachmentLinks(trimmed).some(
+    (l) => l.isImage && l.from === 0 && l.to === trimmed.length,
+  )
+  if (!whole) return null
+  const inCode = findFencedCode(state.doc.toString()).some(
+    (r) => r.from <= line.from && line.from < r.to,
+  )
+  return inCode ? null : line
 }
 
 /**

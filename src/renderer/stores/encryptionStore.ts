@@ -1,6 +1,9 @@
 import { api } from '@renderer/api'
+import { t } from '@renderer/i18n'
+import { useNoticeStore } from '@renderer/stores/noticeStore'
+import { describeVaultError } from '@renderer/stores/vaultErrors'
 import { useVaultStore } from '@renderer/stores/vaultStore'
-import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
+import { runTabMove, useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { create } from 'zustand'
 
 /** True for a locked note's path (encrypted at rest). */
@@ -32,6 +35,11 @@ type EncryptionState = {
   ensureUnlocked: (cb?: () => void) => Promise<void>
   /** Opens a locked note in a tab, prompting for the vault password first if needed. */
   openLocked: (path: string) => Promise<void>
+  /**
+   * Opens any vault note in a tab — locked ones through the password prompt.
+   * Use this for every path that isn't known to be plaintext (reminders, links).
+   */
+  openNote: (path: string) => Promise<void>
   /** Locks a plaintext note. Routes through set-password (with warning) on first use. */
   lockNote: (path: string) => Promise<void>
   /** Permanently decrypts a locked note back to plaintext. */
@@ -40,7 +48,11 @@ type EncryptionState = {
   beginSetPassword: () => void
   /** Opens the unlock prompt (no follow-up action). */
   beginUnlock: () => void
-  /** Clears the session key immediately — locked notes re-prompt. */
+  /**
+   * Clears the session key immediately — locked notes re-prompt. Open locked
+   * tabs are saved first (while the key is still held) and then become locked
+   * placeholders (no decrypted text kept); if a save fails the vault stays unlocked.
+   */
   lockVaultNow: () => Promise<void>
   /** Submits the prompt's password (unlock or set). */
   submitPassword: (password: string, hint?: string) => Promise<void>
@@ -77,19 +89,35 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
     })
   },
 
+  openNote: async (path) => {
+    if (isLockedPath(path)) await get().openLocked(path)
+    else await useWorkspaceStore.getState().openTab(path)
+  },
+
   lockNote: async (path) => {
     const doLock = async () => {
       // Flush any unsaved edits first: lockNote encrypts the on-disk content, so
       // an open dirty tab's draft would otherwise be silently dropped.
       await useWorkspaceStore.getState().saveTab(path)
-      const result = await api.vault.lockNote(path)
-      if (!result.ok) {
-        console.error(`lockNote failed for ${path}: ${result.error}`)
+      if (useWorkspaceStore.getState().tabs.some((t) => t.path === path && t.dirty)) {
+        useNoticeStore.getState().notify(t('errors.lock.lockUnsaved', { path }))
         return
       }
-      // The file's path changed (foo.md -> foo.md.enc): re-point any open tab and
-      // refresh the list so the sidebar shows the locked entry.
-      useWorkspaceStore.getState().renameTab(path, result.data.path)
+      // The file moves (foo.md -> foo.md.enc): a save in between would recreate
+      // the plaintext file, so saves wait for the move + tab re-point.
+      const result = await runTabMove(async () => {
+        const r = await api.vault.lockNote(path)
+        if (r.ok) useWorkspaceStore.getState().renameTab(path, r.data.path)
+        return r
+      })
+      if (!result.ok) {
+        console.error(`lockNote failed for ${path}: ${result.error}`)
+        useNoticeStore
+          .getState()
+          .notify(t('errors.lock.lockFailed', { path, reason: describeVaultError(result.error) }))
+        return
+      }
+      // Refresh the list so the sidebar shows the locked entry.
       await useVaultStore.getState().loadFiles()
     }
     // First-ever lock: no password yet → set one (with the no-recovery warning).
@@ -105,12 +133,22 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
       // Flush unsaved edits first (same reason as lockNote): unlockNote decrypts
       // the on-disk container, so an open dirty tab's draft would be lost.
       await useWorkspaceStore.getState().saveTab(path)
-      const result = await api.vault.unlockNote(path)
-      if (!result.ok) {
-        console.error(`unlockNote failed for ${path}: ${result.error}`)
+      if (useWorkspaceStore.getState().tabs.some((t) => t.path === path && t.dirty)) {
+        useNoticeStore.getState().notify(t('errors.lock.unlockUnsaved', { path }))
         return
       }
-      useWorkspaceStore.getState().renameTab(path, result.data.path)
+      const result = await runTabMove(async () => {
+        const r = await api.vault.unlockNote(path)
+        if (r.ok) useWorkspaceStore.getState().renameTab(path, r.data.path)
+        return r
+      })
+      if (!result.ok) {
+        console.error(`unlockNote failed for ${path}: ${result.error}`)
+        useNoticeStore
+          .getState()
+          .notify(t('errors.lock.unlockFailed', { path, reason: describeVaultError(result.error) }))
+        return
+      }
       await useVaultStore.getState().loadFiles()
     })
   },
@@ -120,8 +158,18 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
   beginUnlock: () => set({ prompt: { mode: 'unlock' }, promptError: null }),
 
   lockVaultNow: async () => {
+    const ws = useWorkspaceStore.getState()
+    const lockedTabs = ws.tabs.filter((t) => isLockedPath(t.path)).map((t) => t.path)
+    for (const path of lockedTabs) await ws.saveTab(path)
+    const unsaved = useWorkspaceStore.getState().tabs.find((t) => isLockedPath(t.path) && t.dirty)
+    if (unsaved !== undefined) {
+      useNoticeStore.getState().notify(t('errors.lock.vaultLockUnsaved', { path: unsaved.path }))
+      return
+    }
     await api.vault.lockVault()
     set({ unlocked: false })
+    // Tabs stay as locked placeholders (no text in memory) that unlock in place.
+    useWorkspaceStore.getState().lockTabs(lockedTabs)
   },
 
   submitPassword: async (password, hint?) => {
@@ -133,7 +181,7 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
       const result = await api.vault.setPassword({ password, hint })
       set({ busy: false })
       if (!result.ok) {
-        set({ promptError: result.error })
+        set({ promptError: describeVaultError(result.error) })
         return
       }
       set({ hasPassword: true, unlocked: true, prompt: null, promptError: null })
@@ -145,11 +193,11 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
     const result = await api.vault.unlock({ password })
     set({ busy: false })
     if (!result.ok) {
-      set({ promptError: result.error })
+      set({ promptError: describeVaultError(result.error) })
       return
     }
     if (result.data !== true) {
-      set({ promptError: 'Wrong password. Try again.' })
+      set({ promptError: t('errors.lock.wrongPassword') })
       return
     }
     set({ unlocked: true, prompt: null, promptError: null })

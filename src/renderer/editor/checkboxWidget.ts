@@ -1,3 +1,4 @@
+import { isolateHistory } from '@codemirror/commands'
 import { RangeSetBuilder } from '@codemirror/state'
 import {
   Decoration,
@@ -7,6 +8,7 @@ import {
   type ViewUpdate,
   WidgetType,
 } from '@codemirror/view'
+import { findFencedCode } from './highlight'
 
 const TASK_RE = /^(\s*)([-*+] )\[([ xX])\]( ?)/gm
 const COMPLETED_TS_RE = / ✓ \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/
@@ -69,6 +71,15 @@ function getContiguousTaskBlock(
     else break
   }
   return { startLine, endLine }
+}
+
+/** A checkbox toggle is one undo step of its own (never merged with a quick second click). */
+function toggleSpec(from: number, to: number, insert: string) {
+  return {
+    changes: { from, to, insert },
+    userEvent: 'input.toggle-task',
+    annotations: isolateHistory.of('full'),
+  }
 }
 
 class CheckboxWidget extends WidgetType {
@@ -148,10 +159,10 @@ class CheckboxWidget extends WidgetType {
       if (startLine === endLine) {
         if (!isChecked) {
           const toggled = `${line.text.replace(/\[ \]/, '[x]')} ✓ ${formatTimestamp()}`
-          view.dispatch({ changes: { from: line.from, to: line.to, insert: toggled } })
+          view.dispatch(toggleSpec(line.from, line.to, toggled))
         } else {
           const toggled = line.text.replace(/\[x\]/i, '[ ]').replace(COMPLETED_TS_RE, '')
-          view.dispatch({ changes: { from: line.from, to: line.to, insert: toggled } })
+          view.dispatch(toggleSpec(line.from, line.to, toggled))
         }
         return
       }
@@ -163,9 +174,12 @@ class CheckboxWidget extends WidgetType {
       }
       const currentIdx = line.number - startLine
       if (!isChecked) {
-        allLines[currentIdx] = `${allLines[currentIdx].replace(/\[ \]/, '[x]')} ✓ ${formatTimestamp()}`
+        allLines[currentIdx] =
+          `${allLines[currentIdx].replace(/\[ \]/, '[x]')} ✓ ${formatTimestamp()}`
       } else {
-        allLines[currentIdx] = allLines[currentIdx].replace(/\[x\]/i, '[ ]').replace(COMPLETED_TS_RE, '')
+        allLines[currentIdx] = allLines[currentIdx]
+          .replace(/\[x\]/i, '[ ]')
+          .replace(COMPLETED_TS_RE, '')
       }
 
       const uncheckedList: string[] = []
@@ -174,11 +188,12 @@ class CheckboxWidget extends WidgetType {
         if (/^\s*[-*+] \[[ ]\]/.test(l)) uncheckedList.push(l)
         else checkedList.push(l)
       }
-      const sorted = [...checkedList, ...uncheckedList]
+      // Open items first, done items sink to the bottom of the block.
+      const sorted = [...uncheckedList, ...checkedList]
 
       const blockFrom = doc.line(startLine).from
       const blockTo = doc.line(endLine).to
-      view.dispatch({ changes: { from: blockFrom, to: blockTo, insert: sorted.join('\n') } })
+      view.dispatch(toggleSpec(blockFrom, blockTo, sorted.join('\n')))
     })
 
     return wrap
@@ -199,7 +214,9 @@ const TIMESTAMP_INLINE_RE = / ✓ \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/
 
 function buildDecorations(view: EditorView): DecorationSet {
   const doc = view.state.doc.toString()
-  const tasks = findTasks(doc)
+  // Task syntax inside fenced code is code, shown verbatim.
+  const fences = findFencedCode(doc)
+  const tasks = findTasks(doc).filter((t) => !fences.some((f) => f.from <= t.from && t.from < f.to))
   const builder = new RangeSetBuilder<Decoration>()
 
   const sorted: { pos: number; end: number; deco: Decoration }[] = []

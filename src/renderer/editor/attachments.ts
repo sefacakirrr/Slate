@@ -1,5 +1,8 @@
 import { EditorView } from '@codemirror/view'
 import { api } from '@renderer/api'
+import { t } from '@renderer/i18n'
+import { isOpenableFileName } from '@renderer/stores/externalPath'
+import { useNoticeStore } from '@renderer/stores/noticeStore'
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'])
 
@@ -33,9 +36,13 @@ async function handleFiles(view: EditorView, files: FileList | File[]): Promise<
 
   const links: string[] = []
 
+  const failures: string[] = []
+
   for (const file of fileArray) {
     if (file.size > MAX_SIZE) {
-      console.warn(`Attachment rejected: ${file.name} exceeds 10MB limit`)
+      failures.push(
+        t('editor.attachments.tooLarge', { name: file.name || t('editor.attachments.pastedFile') }),
+      )
       continue
     }
 
@@ -46,6 +53,7 @@ async function handleFiles(view: EditorView, files: FileList | File[]): Promise<
     const result = await api.attachment.store({ data: base64, name })
     if (!result.ok) {
       console.warn(`Attachment store failed: ${result.error}`)
+      failures.push(t('editor.attachments.attachFailed', { name }))
       continue
     }
 
@@ -55,6 +63,10 @@ async function handleFiles(view: EditorView, files: FileList | File[]): Promise<
     } else {
       links.push(`[${name}](${relativePath})`)
     }
+  }
+
+  if (failures.length > 0) {
+    useNoticeStore.getState().notify(failures.join(' '))
   }
 
   if (links.length === 0) return false
@@ -106,9 +118,20 @@ function extractFilesFromClipboard(clipboardData: DataTransfer | null): File[] {
   return files
 }
 
-export function attachmentExtension() {
+/**
+ * File paste/drop → vault attachment links. `attach: false` (external tabs:
+ * a vault-relative link is meaningless in a file outside the vault) keeps
+ * swallowing file drops but stores nothing.
+ *
+ * Dropped `.md`/`.markdown`/`.txt` files are never attached: the window-level
+ * drop handler (App) opens them as tabs. Every file drop is claimed here so
+ * CodeMirror never inlines a dropped file's text.
+ */
+export function attachmentExtension(opts: { attach?: boolean } = {}) {
+  const attach = opts.attach !== false
   return EditorView.domEventHandlers({
     paste(event, view) {
+      if (!attach) return false
       const files = extractFilesFromClipboard(event.clipboardData)
       if (files.length === 0) return false
 
@@ -121,7 +144,8 @@ export function attachmentExtension() {
       if (!files || files.length === 0) return false
 
       event.preventDefault()
-      void handleFiles(view, Array.from(files))
+      const toAttach = Array.from(files).filter((f) => !isOpenableFileName(f.name))
+      if (attach && toAttach.length > 0) void handleFiles(view, toAttach)
       return true
     },
   })

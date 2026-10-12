@@ -1,8 +1,9 @@
 import { api } from '@renderer/api'
+import { type TFunction, useT } from '@renderer/i18n'
 import { useVaultStore } from '@renderer/stores/vaultStore'
 import type { ImportProgressInfo, ImportResultInfo, ImportScanInfo } from '@shared/types'
 import { FileArchive, FolderOpen } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { createElement, Fragment, type ReactNode, useEffect, useState } from 'react'
 
 type WizardStep =
   | { step: 'pick' }
@@ -18,6 +19,7 @@ type WizardStep =
  * Originals are never modified; import always copies into the vault.
  */
 export function ImportWizard({ onClose }: { onClose: () => void }) {
+  const t = useT()
   const loadFiles = useVaultStore((s) => s.loadFiles)
   const [state, setState] = useState<WizardStep>({ step: 'pick' })
   const [destination, setDestination] = useState<'imported-subfolder' | 'root'>(
@@ -46,11 +48,11 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
     setState({ step: 'scanning' })
     const scan = await api.import.scan(picked.data)
     if (!scan.ok) {
-      setState({ step: 'error', message: describeError(scan.error) })
+      setState({ step: 'error', message: describeError(t, scan.error) })
       return
     }
     if (scan.data.total === 0) {
-      setState({ step: 'error', message: 'No importable notes found in that source.' })
+      setState({ step: 'error', message: t('importer.error.noNotes') })
       return
     }
     setState({ step: 'preview', sourcePath: picked.data, scan: scan.data })
@@ -60,7 +62,7 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
     setState({ step: 'importing', progress: null })
     const result = await api.import.execute({ sourcePath, destination })
     if (!result.ok) {
-      setState({ step: 'error', message: describeError(result.error) })
+      setState({ step: 'error', message: describeError(t, result.error) })
       return
     }
     await loadFiles()
@@ -71,7 +73,7 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <button
         type="button"
-        aria-label="Close"
+        aria-label={t('common.close')}
         onClick={() => {
           if (state.step !== 'importing') onClose()
         }}
@@ -81,16 +83,13 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
         className="relative mx-4 w-full max-w-md rounded-xl border border-slate-700/80 bg-slate-800 p-5 shadow-2xl shadow-black/50"
         role="dialog"
         aria-modal="true"
-        aria-label="Import notes"
+        aria-label={t('importer.title')}
       >
-        <h2 className="text-base font-medium text-slate-100">Import notes</h2>
+        <h2 className="text-base font-medium text-slate-100">{t('importer.title')}</h2>
 
         {state.step === 'pick' && (
           <div className="mt-4 space-y-3">
-            <p className="text-sm text-slate-400">
-              Bring existing notes into Slate. Originals are never changed — files are copied into
-              your vault.
-            </p>
+            <p className="text-sm text-slate-400">{t('importer.pick.intro')}</p>
             <button
               type="button"
               onClick={() => void pickSource('folder')}
@@ -98,10 +97,11 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
             >
               <FolderOpen className="size-5 shrink-0 text-accent-400" aria-hidden="true" />
               <span>
-                <span className="block text-sm font-medium text-slate-200">Folder of notes</span>
+                <span className="block text-sm font-medium text-slate-200">
+                  {t('importer.pick.folderTitle')}
+                </span>
                 <span className="block text-xs text-slate-500">
-                  Any text files — Markdown, .txt, HTML, RTF, code, extension-less notes.
-                  Subfolders are kept.
+                  {t('importer.pick.folderDescription')}
                 </span>
               </span>
             </button>
@@ -112,35 +112,47 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
             >
               <FileArchive className="size-5 shrink-0 text-accent-400" aria-hidden="true" />
               <span>
-                <span className="block text-sm font-medium text-slate-200">Notion export</span>
+                <span className="block text-sm font-medium text-slate-200">
+                  {t('importer.pick.notionTitle')}
+                </span>
                 <span className="block text-xs text-slate-500">
-                  .zip from Notion's "Export" (Markdown & CSV format)
+                  {t('importer.pick.notionDescription')}
                 </span>
               </span>
             </button>
             <p className="text-xs text-slate-500">
-              Apple Notes? It has no bulk export — use a free tool like{' '}
-              <span className="text-slate-400">Exporter</span> (Mac App Store) to export your notes
-              as Markdown or HTML files first, then import that folder here.
+              {rich(t('importer.pick.appleNotes'), {
+                exporter: <span className="text-slate-400">{t('importer.pick.exporterName')}</span>,
+              })}
             </p>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded px-3 py-1.5 text-sm text-slate-300 transition hover:bg-slate-700"
+              >
+                {t('common.cancel')}
+              </button>
+            </div>
           </div>
         )}
 
         {state.step === 'scanning' && (
-          <p className="mt-4 text-sm text-slate-400">Scanning source…</p>
+          <p className="mt-4 text-sm text-slate-400">{t('importer.scanning')}</p>
         )}
 
         {state.step === 'preview' && (
           <div className="mt-4 space-y-4">
             <p className="text-sm text-slate-300">
-              Found <span className="font-semibold text-slate-100">{state.scan.total}</span>{' '}
-              {state.scan.total === 1 ? 'note' : 'notes'} in{' '}
-              <span className="font-medium text-slate-200">{state.scan.sourceName}</span>
-              {formatCounts(state.scan)}
+              {rich(t('importer.preview.found', { count: state.scan.total }), {
+                total: <span className="font-semibold text-slate-100">{state.scan.total}</span>,
+                source: <span className="font-medium text-slate-200">{state.scan.sourceName}</span>,
+                details: formatCounts(t, state.scan),
+              })}
             </p>
             <fieldset className="space-y-2">
               <legend className="text-xs font-medium uppercase tracking-wider text-slate-400">
-                Import into
+                {t('importer.preview.importInto')}
               </legend>
               <label className="flex items-center gap-2 text-sm text-slate-300">
                 <input
@@ -160,7 +172,7 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
                   onChange={() => setDestination('root')}
                   className="accent-accent-500"
                 />
-                Vault root
+                {t('importer.preview.vaultRoot')}
               </label>
             </fieldset>
             <div className="flex justify-end gap-2">
@@ -169,14 +181,14 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
                 onClick={onClose}
                 className="rounded px-3 py-1.5 text-sm text-slate-300 transition hover:bg-slate-700"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 type="button"
                 onClick={() => void runImport(state.sourcePath)}
                 className="rounded bg-accent-600 px-3 py-1.5 text-sm text-white shadow-sm shadow-accent-500/30 transition hover:bg-accent-500"
               >
-                Import {state.scan.total} {state.scan.total === 1 ? 'note' : 'notes'}
+                {t('importer.preview.importButton', { count: state.scan.total })}
               </button>
             </div>
           </div>
@@ -185,7 +197,7 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
         {state.step === 'importing' && (
           <div className="mt-4 space-y-3">
             <p className="text-sm text-slate-400">
-              Importing…{' '}
+              {t('importer.importing')}{' '}
               {state.progress !== null && (
                 <span className="text-slate-300">
                   {state.progress.done}/{state.progress.total}
@@ -212,20 +224,28 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
         {state.step === 'done' && (
           <div className="mt-4 space-y-4">
             <p className="text-sm text-slate-300">
-              Imported <span className="font-semibold text-slate-100">{state.result.imported}</span>{' '}
-              {state.result.imported === 1 ? 'note' : 'notes'}
-              {state.result.skipped > 0 && (
-                <span className="text-slate-500"> ({state.result.skipped} skipped)</span>
+              {rich(
+                t(
+                  state.result.targetFolder !== ''
+                    ? 'importer.done.importedInto'
+                    : 'importer.done.imported',
+                  { count: state.result.imported },
+                ),
+                {
+                  total: (
+                    <span className="font-semibold text-slate-100">{state.result.imported}</span>
+                  ),
+                  skipped:
+                    state.result.skipped > 0 ? (
+                      <span className="text-slate-500">
+                        {t('importer.done.skipped', { count: state.result.skipped })}
+                      </span>
+                    ) : null,
+                  folder: (
+                    <span className="font-medium text-slate-200">{state.result.targetFolder}/</span>
+                  ),
+                },
               )}
-              {state.result.targetFolder !== '' && (
-                <>
-                  {' '}
-                  into <span className="font-medium text-slate-200">
-                    {state.result.targetFolder}/
-                  </span>
-                </>
-              )}
-              . They're indexed and searchable now.
             </p>
             <div className="flex justify-end">
               <button
@@ -233,7 +253,7 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
                 onClick={onClose}
                 className="rounded bg-accent-600 px-3 py-1.5 text-sm text-white shadow-sm shadow-accent-500/30 transition hover:bg-accent-500"
               >
-                Done
+                {t('common.done')}
               </button>
             </div>
           </div>
@@ -248,14 +268,14 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
                 onClick={onClose}
                 className="rounded px-3 py-1.5 text-sm text-slate-300 transition hover:bg-slate-700"
               >
-                Close
+                {t('common.close')}
               </button>
               <button
                 type="button"
                 onClick={() => setState({ step: 'pick' })}
                 className="rounded bg-accent-600 px-3 py-1.5 text-sm text-white shadow-sm shadow-accent-500/30 transition hover:bg-accent-500"
               >
-                Try again
+                {t('importer.error.tryAgain')}
               </button>
             </div>
           </div>
@@ -265,19 +285,33 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
   )
 }
 
-function formatCounts(scan: ImportScanInfo): string {
-  if (scan.kind === 'notion-zip') return ' (Notion export).'
-  const parts: string[] = []
-  if (scan.counts.md > 0) parts.push(`${scan.counts.md} markdown`)
-  if (scan.counts.txt > 0) parts.push(`${scan.counts.txt} text`)
-  if (scan.counts.html > 0) parts.push(`${scan.counts.html} HTML`)
-  if (scan.counts.rtf > 0) parts.push(`${scan.counts.rtf} RTF`)
-  if (scan.counts.text > 0) parts.push(`${scan.counts.text} other plain-text`)
-  return parts.length > 0 ? ` (${parts.join(', ')}).` : '.'
+/**
+ * Renders a translated template whose {name} placeholders are React nodes
+ * (styled counts, names), so word order stays per-language.
+ */
+function rich(template: string, nodes: Record<string, ReactNode>): ReactNode {
+  const parts = template.split(/(\{\w+\})/).map((part) => {
+    const name = /^\{(\w+)\}$/.exec(part)?.[1]
+    return name !== undefined && Object.hasOwn(nodes, name) ? nodes[name] : part
+  })
+  return createElement(Fragment, null, ...parts)
 }
 
-function describeError(error: string): string {
-  if (error === 'unsupported-source') return 'That file type is not supported — pick a .zip export.'
-  if (error === 'no-vault') return 'No vault is configured yet — choose a vault folder first.'
-  return `Import failed: ${error}`
+function formatCounts(t: TFunction, scan: ImportScanInfo): string {
+  if (scan.kind === 'notion-zip') return t('importer.counts.notion')
+  const parts: string[] = []
+  if (scan.counts.md > 0) parts.push(t('importer.counts.md', { count: scan.counts.md }))
+  if (scan.counts.txt > 0) parts.push(t('importer.counts.txt', { count: scan.counts.txt }))
+  if (scan.counts.html > 0) parts.push(t('importer.counts.html', { count: scan.counts.html }))
+  if (scan.counts.rtf > 0) parts.push(t('importer.counts.rtf', { count: scan.counts.rtf }))
+  if (scan.counts.text > 0) parts.push(t('importer.counts.other', { count: scan.counts.text }))
+  return parts.length > 0
+    ? t('importer.counts.list', { list: parts.join(', ') })
+    : t('importer.counts.none')
+}
+
+function describeError(t: TFunction, error: string): string {
+  if (error === 'unsupported-source') return t('importer.error.unsupported')
+  if (error === 'no-vault') return t('importer.error.noVault')
+  return t('importer.error.failed', { error })
 }

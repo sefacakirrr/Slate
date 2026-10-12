@@ -1,9 +1,9 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { EncryptionService } from './EncryptionService'
-import { SettingsService } from './SettingsService'
+import { rekeyFolderOrder, SettingsService } from './SettingsService'
 
 let dir: string
 let filePath: string
@@ -201,5 +201,68 @@ describe('SettingsService', () => {
       expect(await reopened.getVaultPath()).toBe('C:/vault')
       expect(await reopened.getStickies()).toEqual([{ path: 'note.md', bounds }])
     })
+  })
+})
+
+describe('rekeyFolderOrder (folder rename/move)', () => {
+  it('moves the folder and its subfolders to the new path, leaving others alone', () => {
+    const order = { '': ['r.md'], Box: ['b.md', 'a.md'], 'Box/Sub': ['d.md'], Boxer: ['x.md'] }
+    expect(rekeyFolderOrder(order, 'Box', 'Crate')).toEqual({
+      '': ['r.md'],
+      Crate: ['b.md', 'a.md'],
+      'Crate/Sub': ['d.md'],
+      Boxer: ['x.md'],
+    })
+  })
+
+  it('returns the same object when no key is affected', () => {
+    const order = { A: ['a.md'] }
+    expect(rekeyFolderOrder(order, 'B', 'C')).toBe(order)
+  })
+})
+
+describe('SettingsService write serialization', () => {
+  it('keeps every concurrent write from different methods (no lost updates)', async () => {
+    const settings = new SettingsService(filePath)
+    const reminder = {
+      id: 'r1',
+      title: 'T',
+      notePath: 'a.md',
+      fireAt: new Date(0).toISOString(),
+      alertBefore: 0,
+      recurrence: 'none' as const,
+      fired: false,
+      createdAt: 0,
+    }
+    // Fired without awaiting in between: each must see the previous one's write.
+    await Promise.all([
+      settings.setVaultPath('C:/v'),
+      settings.setTheme('light'),
+      settings.addReminder(reminder),
+      settings.updateStickyGeometry('a.md', { x: 1, y: 2, width: 3, height: 4 }),
+      settings.setNoteOrder('', ['b.md', 'a.md']),
+      settings.setFontSize(18),
+      settings.updateStickyGeometry('b.md', { x: 5, y: 6, width: 7, height: 8 }),
+      settings.markReminderFired('r1'),
+      settings.setAutoSave(false),
+    ])
+    const reopened = new SettingsService(filePath)
+    expect(await reopened.getVaultPath()).toBe('C:/v')
+    expect(await reopened.getTheme()).toBe('light')
+    expect(await reopened.getReminders()).toEqual([{ ...reminder, fired: true }])
+    expect((await reopened.getStickies()).map((s) => s.path)).toEqual(['a.md', 'b.md'])
+    expect(await reopened.getNoteOrder()).toEqual({ '': ['b.md', 'a.md'] })
+    expect(await reopened.getFontSize()).toBe(18)
+    expect(await reopened.getAutoSave()).toBe(false)
+  })
+
+  it('a failed write does not block later writes', async () => {
+    const settings = new SettingsService(filePath)
+    // A directory where the file should be: the atomic rename fails.
+    await mkdir(filePath)
+    await expect(settings.setTheme('light')).rejects.toThrow()
+    await rm(filePath, { recursive: true })
+    await settings.setTheme('dark')
+    expect(await new SettingsService(filePath).getTheme()).toBe('dark')
   })
 })

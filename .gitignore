@@ -6,6 +6,9 @@ out/
 dist/
 release/
 
+# Playwright E2E artifacts (traces, screenshots)
+e2e/.results/
+
 # TypeScript build info (generated, not source)
 *.tsbuildinfo
 
@@ -32,3 +35,5 @@ npm-debug.log*
 # Claude Code local settings (personal permissions, session data)
 .claude/settings.local.json
 .claude/sessions/
+out-*/
+e2e/.results-*/

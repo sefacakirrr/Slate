@@ -1,0 +1,47 @@
+/** Words and phrases reused across areas. Area-specific text lives in its own file. */
+export const common = {
+  appName: 'Slate',
+  cancel: 'Cancel',
+  save: 'Save',
+  delete: 'Delete',
+  remove: 'Remove',
+  close: 'Close',
+  ok: 'OK',
+  rename: 'Rename',
+  restore: 'Restore',
+  open: 'Open',
+  create: 'Create',
+  undo: 'Undo',
+  retry: 'Retry',
+  done: 'Done',
+  back: 'Back',
+  next: 'Next',
+  continue: 'Continue',
+  untitled: 'Untitled',
+  loading: 'Loading…',
+  note: 'Note',
+  folder: 'Folder',
+  notesCount: { one: '{count} note', other: '{count} notes' },
+  itemsCount: { one: '{count} item', other: '{count} items' },
+  /** The OS recycle bin, per platform, with the forms sentences need. */
+  osTrash: {
+    win: { name: 'Recycle Bin', to: 'to the Recycle Bin', in: 'in the Recycle Bin' },
+    mac: { name: 'macOS Trash', to: 'to the macOS Trash', in: 'in the macOS Trash' },
+    linux: { name: 'system trash', to: 'to the system trash', in: 'in the system trash' },
+  },
+  time: {
+    justNow: 'just now',
+    minutesAgo: { one: '{count} min ago', other: '{count} min ago' },
+    hoursAgo: { one: '{count} h ago', other: '{count} h ago' },
+    daysAgo: { one: '{count} day ago', other: '{count} days ago' },
+    today: 'Today',
+    yesterday: 'Yesterday',
+    tomorrow: 'Tomorrow',
+  },
+  language: {
+    /** Shown in both languages so it can always be found. */
+    label: 'Language / Dil',
+    en: 'English',
+    tr: 'Türkçe',
+  },
+}
