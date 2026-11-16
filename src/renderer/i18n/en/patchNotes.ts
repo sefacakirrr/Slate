@@ -2,7 +2,13 @@
 export const patchNotes = {
   title: "What's New",
   gotIt: 'Got it',
-  /** Highlights of v0.1.16, the current release. */
+  /** Highlights of v0.1.17, the current release. */
+  v0117: {
+    h01: 'Slate for Mac is back: download the DMG, or install with one Terminal command that opens without a security warning',
+    h02: 'On Mac, Slate is listed under “Open With” for .md and .txt files',
+    h03: 'What’s New no longer disappears unseen when Slate starts hidden at login',
+  },
+  /** Highlights of v0.1.16. */
   v0116: {
     h01: 'Deleted notes and folders go to the Recycle Bin — undo right away or restore them from Slate’s Trash',
     h02: 'Open .md and .txt files by dragging them onto Slate or with “Open with”',

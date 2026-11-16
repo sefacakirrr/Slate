@@ -44,3 +44,19 @@ test('Escape closes the What’s New modal', async ({ page }) => {
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
 })
+
+test('the notes count as seen only once dismissed (a hidden launch at login must not consume them)', async ({
+  page,
+}) => {
+  await showPatchNotes(page)
+  // Renderer loaded but the user never closed the modal (e.g. Slate started hidden).
+  await page.reload()
+  const dialog = page.getByRole('dialog', { name: /What's New/ })
+  await expect(dialog).toBeVisible()
+
+  await dialog.getByRole('button', { name: 'Got it' }).click()
+  await expect(dialog).toBeHidden()
+  await page.reload()
+  await expect(page.getByRole('button', { name: /new note/i }).first()).toBeVisible()
+  await expect(dialog).toBeHidden()
+})

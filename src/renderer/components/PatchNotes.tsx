@@ -17,6 +17,15 @@ type ReleaseNote = {
  */
 const RELEASES: ReleaseNote[] = [
   {
+    version: '0.1.17',
+    date: '2026-11-16',
+    highlights: (t) => [
+      t('patchNotes.v0117.h01'),
+      t('patchNotes.v0117.h02'),
+      t('patchNotes.v0117.h03'),
+    ],
+  },
+  {
     version: '0.1.16',
     date: '2026-10-12',
     highlights: (t) => [
@@ -82,28 +91,36 @@ const RELEASES: ReleaseNote[] = [
 
 const STORAGE_KEY = 'slate:lastSeenVersion'
 
+function markSeen(): void {
+  localStorage.setItem(STORAGE_KEY, __APP_VERSION__)
+}
+
 export function PatchNotesModal() {
   const t = useT()
   const [visible, setVisible] = useState(false)
   const [note, setNote] = useState<ReleaseNote | null>(null)
 
   useEffect(() => {
-    const lastSeen = localStorage.getItem(STORAGE_KEY)
-    const current = __APP_VERSION__
-    if (lastSeen === current) return
+    if (localStorage.getItem(STORAGE_KEY) === __APP_VERSION__) return
 
-    const entry = RELEASES.find((r) => r.version === current)
+    const entry = RELEASES.find((r) => r.version === __APP_VERSION__)
     if (entry) {
+      // Marked seen only on dismiss: the renderer also mounts when Slate starts
+      // hidden at login, and the user must still see the notes when they open it.
       setNote(entry)
       setVisible(true)
+    } else {
+      markSeen()
     }
-    localStorage.setItem(STORAGE_KEY, current)
   }, [])
 
   useEffect(() => {
     if (!visible) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setVisible(false)
+      if (e.key === 'Escape') {
+        markSeen()
+        setVisible(false)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -122,7 +139,10 @@ export function PatchNotesModal() {
       >
         <button
           type="button"
-          onClick={() => setVisible(false)}
+          onClick={() => {
+            markSeen()
+            setVisible(false)
+          }}
           title={t('common.close')}
           className="absolute right-3 top-3 rounded p-1 text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 light:hover:bg-slate-100 light:hover:text-slate-700"
         >
@@ -158,7 +178,10 @@ export function PatchNotesModal() {
 
         <button
           type="button"
-          onClick={() => setVisible(false)}
+          onClick={() => {
+            markSeen()
+            setVisible(false)
+          }}
           className="mt-6 w-full shrink-0 rounded-lg bg-accent-600 py-2 text-sm font-medium text-white transition hover:bg-accent-500"
         >
           {t('patchNotes.gotIt')}

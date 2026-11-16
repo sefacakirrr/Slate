@@ -56,21 +56,26 @@ Başka yerdeki notlarını tek seferde içeri al (Settings → Import):
 |---|---|
 | `Slate-x.x.x-setup-x64.exe` | Windows |
 | `Slate-x.x.x-arm64.dmg` | Mac — Apple Silicon (M1/M2/M3) |
-| `Slate-x.x.x-x64.dmg` | Mac — Intel |
 
-### macOS — İlk Açılış
+### macOS — Kurulum
 
-macOS "hasar görmüş" veya "geliştirici doğrulanamıyor" diyebilir (app Apple sertifikasıyla imzalanmamış). Tek seferlik çözüm:
+Terminal'e şunu yapıştır — en son sürümü indirir, `/Applications`'a kurar ve açar:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sefacakirrr/Slate/main/scripts/install-mac.sh | bash
+```
+
+Bu yolla kurulan Slate uyarısız açılır; güncellemek için aynı komutu tekrar çalıştır. (Şimdilik sadece Apple Silicon — M1 ve sonrası.)
+
+DMG'yi tarayıcıdan indirirsen macOS "hasar görmüş" veya "geliştirici doğrulanamıyor" diyebilir (app Apple sertifikasıyla imzalanmamış). Tek seferlik çözüm:
 
 ```bash
 xattr -cr /Applications/Slate.app
 ```
 
-Veya: System Settings → Privacy & Security → sayfanın altında "Open Anyway" butonuna tıkla.
-
 ### Otomatik Güncelleme
 
-Windows'ta yeni sürüm otomatik indirilir; yeniden başlatınca kurulur. macOS'te uygulama yeni sürümü haber verir ve Releases sayfasına yönlendirir (imzasız uygulamalar kendini güncelleyemez).
+Windows'ta yeni sürüm otomatik indirilir; yeniden başlatınca kurulur. macOS'te uygulama yeni sürümü haber verir; kurulum komutunu tekrar çalıştırarak güncelle (imzasız uygulamalar kendini güncelleyemez).
 
 ---
 
@@ -101,7 +106,7 @@ git tag v0.1.3
 git push origin v0.1.3
 ```
 
-GitHub kendi sunucularında Mac (arm64 + x64) ve Windows (x64) için build alır, ~10 dakika sonra dosyalar şu adreste hazır olur:
+GitHub kendi sunucularında Mac (arm64) ve Windows (x64) için build alır, ~10 dakika sonra dosyalar şu adreste hazır olur:
 
 **https://github.com/sefacakirrr/Slate/releases**
 

@@ -4,6 +4,11 @@ import type { Shape } from '../translate'
 export const patchNotes: Shape<typeof en> = {
   title: 'Yenilikler',
   gotIt: 'Anladım',
+  v0117: {
+    h01: 'Mac sürümü geri döndü: DMG’yi indir ya da tek bir Terminal komutuyla güvenlik uyarısı olmadan kur',
+    h02: 'Mac’te .md ve .txt dosyaları için “Birlikte Aç” listesinde Slate yer alıyor',
+    h03: 'Slate oturum açılışında gizli başladığında Yenilikler penceresi görülmeden kaybolmuyor',
+  },
   v0116: {
     h01: 'Silinen notlar ve klasörler Geri Dönüşüm Kutusu’na gider; hemen geri alabilir ya da Slate Çöp Kutusu’ndan geri yükleyebilirsin',
     h02: '.md ve .txt dosyalarını Slate’e sürükleyerek veya “Birlikte aç” ile açabilirsin',
