@@ -38,19 +38,20 @@ mac:
   # app's open-file event. Windows registers the same types in
   # resources/installer.nsh (customInstall) instead: electron-builder's NSIS
   # fileAssociations would overwrite the user's default app for the extension.
+  # No per-type `icon`: documents reuse the app icon. Pointing it at
+  # resources/icon.icns re-copies that file onto Contents/Resources/icon.icns,
+  # which fails with EEXIST on CI (hard-link copies) and broke the v0.1.16 DMG.
   fileAssociations:
     - ext: [md, markdown]
       name: Markdown document
       description: Markdown document
       role: Editor
       rank: Alternate
-      icon: resources/icon.icns
     - ext: txt
       name: Text document
       description: Text document
       role: Editor
       rank: Alternate
-      icon: resources/icon.icns
 
 dmg:
   title: ${productName} ${version}

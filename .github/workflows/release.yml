@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - 'v*'
+  # Manual run: rebuilds only the macOS DMG for the version in package.json and
+  # attaches it to that version's existing release (e.g. after a failed mac job).
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -26,8 +29,12 @@ jobs:
         run: npx electron-vite build && npx electron-builder --mac --arm64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # electron-builder skips uploads to a release published >2h ago;
+          # a manual run exists precisely to add to such a release.
+          EP_GH_IGNORE_TIME: ${{ github.event_name == 'workflow_dispatch' }}
 
   build-win:
+    if: github.event_name == 'push'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
